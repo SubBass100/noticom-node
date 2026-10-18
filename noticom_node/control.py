@@ -17,12 +17,18 @@ from typing import Any
 
 import aiohttp
 
+import time
+
 from . import __version__, protocol
+from .chimecache import ChimeCache
+from .player import Player
+from .playqueue import Job
 from .state import NodeState, Pairing
 
 _LOGGER = logging.getLogger(__name__)
 
 WS_PATH = "/api/noticom/ws"
+CHIME_PATH = "/api/noticom/chime/{}"
 HEARTBEAT_S = 30
 HANDSHAKE_TIMEOUT_S = 10
 BACKOFF_MIN_S = 1.0
@@ -52,6 +58,18 @@ class HandshakeError(Exception):
     """The handshake failed; retry after back-off."""
 
 
+def signed_headers(state: NodeState, method: str, path: str) -> dict[str, str]:
+    """Headers authenticating an HTTP request to HA (docs/DESIGN.md §3)."""
+    ts = int(time.time())
+    return {
+        "X-Noticom-Node": state.node_id,
+        "X-Noticom-Time": str(ts),
+        "X-Noticom-Sig": protocol.sign(
+            state.key, protocol.request_signing_payload(method, path, ts)
+        ),
+    }
+
+
 def ws_url(server_url: str) -> str:
     """http://host:8123 -> ws://host:8123/api/noticom/ws."""
     base = server_url.rstrip("/")
@@ -71,17 +89,46 @@ class ControlClient:
         pairing: Pairing,
         apply_config: ApplyConfig,
         get_state: Callable[[], dict[str, Any]] | None = None,
+        player: Player | None = None,
+        cache: ChimeCache | None = None,
     ) -> None:
         self._state = state
         self._pairing = pairing
         self._apply_config = apply_config
         self._get_state = get_state or (lambda: {})
+        self._player = player
+        self._cache = cache
+        self._session: aiohttp.ClientSession | None = None
+        self._sync_task: asyncio.Task | None = None
+
+    async def _fetch_chime(self, chime_hash: str) -> bytes:
+        """Download a chime from HA with a signed request."""
+        assert self._session is not None
+        path = CHIME_PATH.format(chime_hash)
+        async with self._session.get(
+            self._pairing.server_url.rstrip("/") + path,
+            headers=signed_headers(self._state, "GET", path),
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.read()
+
+    def _start_sync(self, manifest: list[dict]) -> None:
+        """Sync chimes in the background so the channel keeps flowing."""
+        if self._cache is None:
+            return
+        if self._sync_task is not None:
+            self._sync_task.cancel()
+        self._sync_task = asyncio.create_task(
+            self._cache.sync(manifest, self._fetch_chime)
+        )
 
     async def run(self) -> Outcome:
         """Connect, and reconnect after any failure, until an Outcome."""
         backoff = BACKOFF_MIN_S
         url = ws_url(self._pairing.server_url)
         async with aiohttp.ClientSession() as session:
+            self._session = session
             while True:
                 authed = False
                 try:
@@ -146,6 +193,7 @@ class ControlClient:
         ):
             raise HandshakeError("server failed to prove its identity")
         await self._config(ws, reply.get("config") or {})
+        self._start_sync(reply.get("chimes") or [])
         return node_nonce
 
     async def _serve(
@@ -154,6 +202,22 @@ class ControlClient:
         """Handle messages until the socket closes (None) or an Outcome."""
         if self._restart_pending:
             return Outcome.RESTART
+        if self._player is not None:
+            async def report(job_id: str, status: str) -> None:
+                await ws.send_str(protocol.encode(protocol.T_JOB, job_id=job_id, status=status))
+
+            self._player.report = report
+            self._player.fetch = self._fetch_chime
+        try:
+            return await self._serve_messages(ws, node_nonce)
+        finally:
+            if self._player is not None:
+                self._player.report = None
+                self._player.fetch = None
+
+    async def _serve_messages(
+        self, ws: aiohttp.ClientWebSocketResponse, node_nonce: str
+    ) -> Outcome | None:
         async for msg in ws:
             if msg.type != aiohttp.WSMsgType.TEXT:
                 continue
@@ -168,6 +232,16 @@ class ControlClient:
                     return Outcome.RESTART
             elif msg_type == protocol.T_UNPAIR:
                 self._check_unpair(data, node_nonce)
+            elif msg_type == protocol.T_CHIMES:
+                self._start_sync(data.get("chimes") or [])
+            elif msg_type == protocol.T_PLAY and self._player is not None:
+                try:
+                    job = Job.from_message(data)
+                except KeyError:
+                    continue
+                await self._player.add(job)
+            elif msg_type == protocol.T_STOP and self._player is not None:
+                await self._player.stop()
             else:
                 _LOGGER.debug("Ignoring %s (not implemented yet)", msg_type)
         return None

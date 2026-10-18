@@ -178,3 +178,23 @@ async def speak(text: str, device: str = OUTPUT_DEVICE) -> None:
     wav, _ = await proc.communicate()
     if wav:
         await play_wav_bytes(wav, device)
+
+
+async def play_file(path, device: str = OUTPUT_DEVICE) -> None:
+    """Play a WAV file; cancelling stops playback immediately."""
+    if FAKE:
+        _LOGGER.info("[fake] play %s", path)
+        await asyncio.sleep(0.05)
+        return
+    proc = await asyncio.create_subprocess_exec(
+        "aplay", "-q", "-D", device, str(path),
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, err = await proc.communicate()
+    except asyncio.CancelledError:
+        proc.kill()
+        await proc.wait()
+        raise
+    if proc.returncode != 0:
+        raise RuntimeError(f"aplay failed: {err.decode(errors='replace').strip()}")

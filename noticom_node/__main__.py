@@ -7,7 +7,9 @@ import logging
 
 from . import __version__, mixer
 from .adoption import AdoptionServer
+from .chimecache import ChimeCache
 from .control import ApplyResult, ControlClient, Outcome
+from .player import Player
 from .hardware import (
     DEFAULT_BUTTON_NC,
     DEFAULT_BUTTON_PIN,
@@ -15,6 +17,7 @@ from .hardware import (
     beeps,
     cancel_tone,
     chirp,
+    play_file,
     speak,
 )
 from .reset import confirm_reset
@@ -32,7 +35,9 @@ def _mixer_values(config: dict) -> dict:
     }
 
 
-async def _node(state: NodeState, button: PushButton) -> Outcome:
+async def _node(
+    state: NodeState, button: PushButton, player: Player, cache: ChimeCache
+) -> Outcome:
     """Adopt if unclaimed, then stay connected to HA."""
     pairing = state.pairing
     if pairing is None:
@@ -42,6 +47,7 @@ async def _node(state: NodeState, button: PushButton) -> Outcome:
 
     async def apply_config(config: dict) -> ApplyResult:
         state.save_config(config)
+        player.queue.chime_priority = bool(config.get("chime_priority", True))
         ok = await mixer.apply(**_mixer_values(config))
         pin = int(config.get("button_pin", button.pin))
         nc = bool(config.get("button_nc", button.normally_closed))
@@ -50,12 +56,19 @@ async def _node(state: NodeState, button: PushButton) -> Outcome:
             _LOGGER.info("Button changed to GPIO%d (NC=%s); restarting", pin, nc)
         return ApplyResult(ok=ok, reason=None if ok else "mixer", restart=restart)
 
-    return await ControlClient(state, pairing, apply_config).run()
+    def node_state() -> dict:
+        return {"queue_depth": player.queue.depth, "playing": player.queue.current is not None}
+
+    client = ControlClient(
+        state, pairing, apply_config, node_state, player=player, cache=cache
+    )
+    return await client.run()
 
 
 async def run() -> None:
     """Run the node until it's reset, unpaired or needs a restart."""
     state = NodeState()
+    cache = ChimeCache()
     cached = state.config  # HA's last config, so settings apply before connecting
     await mixer.apply(**_mixer_values(cached))
     button = PushButton(
@@ -69,7 +82,10 @@ async def run() -> None:
         button.pin_level,
         "PRESSED" if button.is_pressed else "released",
     )
-    node = asyncio.create_task(_node(state, button))
+    player = Player(cache, play_file)
+    player.queue.chime_priority = bool(cached.get("chime_priority", True))
+    playback = asyncio.create_task(player.run())
+    node = asyncio.create_task(_node(state, button, player, cache))
     try:
         while True:
             reset = asyncio.create_task(button.reset_requested.wait())
@@ -95,6 +111,7 @@ async def run() -> None:
                 # Exit; systemd restarts the service unclaimed and advertising.
                 return
     finally:
+        playback.cancel()
         button.close()
 
 
