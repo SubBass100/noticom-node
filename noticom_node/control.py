@@ -29,6 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 
 WS_PATH = "/api/noticom/ws"
 CHIME_PATH = "/api/noticom/chime/{}"
+CLIP_UPLOAD_PATH = "/api/noticom/clip"
 HEARTBEAT_S = 30
 HANDSHAKE_TIMEOUT_S = 10
 BACKOFF_MIN_S = 1.0
@@ -100,6 +101,55 @@ class ControlClient:
         self._cache = cache
         self._session: aiohttp.ClientSession | None = None
         self._sync_task: asyncio.Task | None = None
+        self._ws: aiohttp.ClientWebSocketResponse | None = None
+
+    @property
+    def connected(self) -> bool:
+        """Whether the control channel is up and authenticated."""
+        return self._ws is not None and not self._ws.closed
+
+    async def upload_clip(self, wav: bytes) -> bool:
+        """Send a PTT recording to HA. Returns False if it wasn't accepted."""
+        if self._session is None or not self.connected:
+            return False
+        try:
+            async with self._session.post(
+                self._pairing.server_url.rstrip("/") + CLIP_UPLOAD_PATH,
+                data=wav,
+                headers={
+                    **signed_headers(self._state, "POST", CLIP_UPLOAD_PATH),
+                    "Content-Type": "audio/wav",
+                },
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("HA refused the message: HTTP %s %s", resp.status, await resp.text())
+                    return False
+                body = await resp.json()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.warning("Couldn't send the message: %r", err)
+            return False
+        await self.send_ptt("sent", clip_id=body.get("clip_id"))
+        return True
+
+    async def send_ptt(self, phase: str, **fields: Any) -> None:
+        """Tell HA about push-to-talk activity (best effort)."""
+        if self.connected:
+            try:
+                await self._ws.send_str(protocol.encode(protocol.T_PTT, phase=phase, **fields))
+            except ConnectionError:
+                pass
+
+    async def _fetch_clip(self, clip_url: str) -> bytes:
+        """Download an intercom message with a signed request."""
+        assert self._session is not None
+        async with self._session.get(
+            self._pairing.server_url.rstrip("/") + clip_url,
+            headers=signed_headers(self._state, "GET", clip_url),
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.read()
 
     async def _fetch_chime(self, chime_hash: str) -> bytes:
         """Download a chime from HA with a signed request."""
@@ -208,12 +258,16 @@ class ControlClient:
 
             self._player.report = report
             self._player.fetch = self._fetch_chime
+            self._player.fetch_clip = self._fetch_clip
+        self._ws = ws
         try:
             return await self._serve_messages(ws, node_nonce)
         finally:
+            self._ws = None
             if self._player is not None:
                 self._player.report = None
                 self._player.fetch = None
+                self._player.fetch_clip = None
 
     async def _serve_messages(
         self, ws: aiohttp.ClientWebSocketResponse, node_nonce: str

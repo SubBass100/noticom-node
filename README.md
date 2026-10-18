@@ -8,9 +8,13 @@ Keyestudio clone), a small speaker on the HAT's speaker output, and a button
 from a GPIO pin to ground (default GPIO13, normally open; normally closed
 buttons are supported too).
 
-> **Status: early.** The installer sets up the ReSpeaker sound card; nodes
-> adopt into Home Assistant, stay connected, follow its settings, and play
-> chimes from HA automations. PTT recording is next.
+> **Status: early, feature-complete.** The installer sets up the ReSpeaker
+> sound card; nodes adopt into Home Assistant, stay connected, follow its
+> settings, play chimes, and work as push-to-talk intercoms.
+
+**Using the button:** hold it, wait for the chirp, talk (up to 45 s), let
+go to send. A low tone means the message couldn't be sent. Quick taps do
+nothing (except the factory-reset gesture below).
 
 ## Install
 
@@ -52,7 +56,8 @@ cancelled."
 | `noticom_node/state.py` | Identity key, node id, pairing and cached config in `/etc/noticom` |
 | `noticom_node/reset.py` | Two-step factory reset confirmation |
 | `noticom_node/playqueue.py` | Playback queue rules (1 playing + 5 waiting, chime priority) |
-| `noticom_node/player.py` | Runs queued jobs and reports their status to HA |
+| `noticom_node/player.py` | Runs queued jobs (chimes, intercom messages) and reports status to HA |
+| `noticom_node/ptt.py` | Push-to-talk: hold detection, recording, upload |
 | `noticom_node/chimecache.py` | Chime cache by SHA-256, synced from HA |
 | `noticom_node/hardware.py` | Button (gpiozero) and audio (aplay) |
 | `noticom_node/mixer.py` | WM8960 mixer state: mono output, mic routing, gains |

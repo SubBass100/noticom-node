@@ -116,3 +116,58 @@ async def test_failed_playback_reports_error_and_continues(tmp_path):
     await h.settle()
     assert ("j1", "error") in h.reports and ("j2", "done") in h.reports
     h.task.cancel()
+
+
+async def test_clip_plays_chime_then_message(tmp_path):
+    h = Harness(tmp_path)
+    played_bytes = []
+
+    async def play_file(path):
+        played_bytes.append(path.read_bytes())
+
+    async def fetch_clip(url):
+        assert url == "/api/noticom/clip/abc"
+        return b"RIFF message"
+
+    h.player._play_file = play_file
+    h.player.fetch_clip = fetch_clip
+    await h.player.add(Job(job_id="m1", kind="clip", clip_url="/api/noticom/clip/abc", pre_chime_hash=HASH))
+    await h.settle()
+    assert played_bytes == [WAV, b"RIFF message"]  # chime (fetched on demand), then message
+    assert h.reports[-1] == ("m1", "done")
+    h.task.cancel()
+
+
+async def test_clip_without_chime_and_with_broken_chime(tmp_path):
+    h = Harness(tmp_path)
+    played = []
+
+    async def play_file(path):
+        played.append(path.read_bytes())
+
+    async def fetch_clip(url):
+        return b"RIFF message"
+
+    async def no_chime(_):
+        raise FileNotFoundError
+
+    h.player._play_file = play_file
+    h.player.fetch_clip = fetch_clip
+    h.player.fetch = no_chime
+    await h.player.add(Job(job_id="m1", kind="clip", clip_url="/c", pre_chime_hash="f" * 64))
+    await h.player.add(Job(job_id="m2", kind="clip", clip_url="/c"))
+    await h.settle()
+    assert played == [b"RIFF message", b"RIFF message"]  # a missing chime doesn't block the message
+    h.task.cancel()
+
+
+async def test_hold_delays_playback_until_released(tmp_path):
+    h = Harness(tmp_path)
+    h.player.set_hold(True)
+    await h.player.add(chime_job(1))
+    await h.settle()
+    assert h.played == []  # someone's recording
+    h.player.set_hold(False)
+    await h.settle()
+    assert h.played == [HASH]
+    h.task.cancel()

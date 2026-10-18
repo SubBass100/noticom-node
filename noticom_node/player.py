@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -15,6 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 Report = Callable[[str, str], Awaitable[None]]  # (job_id, status)
 PlayFile = Callable[[Path], Awaitable[None]]
+FetchClip = Callable[[str], Awaitable[bytes]]  # clip_url -> WAV bytes
 
 
 class Player:
@@ -28,6 +30,16 @@ class Player:
         self._playing: asyncio.Task | None = None
         self.report: Report | None = None  # set while connected to HA
         self.fetch: Fetch | None = None  # set while connected to HA
+        self.fetch_clip: FetchClip | None = None  # set while connected to HA
+        self._unheld = asyncio.Event()
+        self._unheld.set()
+
+    def set_hold(self, hold: bool) -> None:
+        """While held (someone is recording), don't start the next job."""
+        if hold:
+            self._unheld.clear()
+        else:
+            self._unheld.set()
 
     async def _report(self, job_id: str, status: str) -> None:
         if self.report is not None:
@@ -57,7 +69,10 @@ class Player:
         while True:
             await self._wake.wait()
             self._wake.clear()
-            while (job := self.queue.start_next()) is not None:
+            while True:
+                await self._unheld.wait()
+                if (job := self.queue.start_next()) is None:
+                    break
                 await self._report(job.job_id, protocol.JOB_STARTED)
                 status = protocol.JOB_DONE
                 self._playing = asyncio.create_task(self._play(job))
@@ -78,15 +93,34 @@ class Player:
                 if status != protocol.JOB_DROPPED:
                     await self._report(job.job_id, status)
 
-    async def _play(self, job: Job) -> None:
-        if job.kind != protocol.KIND_CHIME or not job.chime_hash:
-            raise ValueError(f"unsupported job kind {job.kind!r}")
-        path = self._cache.path(job.chime_hash)
+    async def _chime_path(self, chime_hash: str) -> Path:
+        path = self._cache.path(chime_hash)
         if path is None:
             # Not synced yet (e.g. just added in HA): fetch it now.
             if self.fetch is None:
-                raise FileNotFoundError(f"chime {job.chime_hash[:12]} not cached")
-            path = await self._cache.fetch(job.chime_hash, self.fetch)
-        name = self._cache.names.get(job.chime_hash, job.chime_hash[:12])
-        _LOGGER.info("Playing chime %s", name)
-        await self._play_file(path)
+                raise FileNotFoundError(f"chime {chime_hash[:12]} not cached")
+            path = await self._cache.fetch(chime_hash, self.fetch)
+        return path
+
+    async def _play(self, job: Job) -> None:
+        if job.kind == protocol.KIND_CHIME and job.chime_hash:
+            name = self._cache.names.get(job.chime_hash, job.chime_hash[:12])
+            _LOGGER.info("Playing chime %s", name)
+            await self._play_file(await self._chime_path(job.chime_hash))
+        elif job.kind == protocol.KIND_CLIP and job.clip_url:
+            if self.fetch_clip is None:
+                raise ConnectionError("not connected; can't fetch the message")
+            # Fetch first so the chime isn't followed by a pause.
+            data = await self.fetch_clip(job.clip_url)
+            if job.pre_chime_hash:
+                try:
+                    await self._play_file(await self._chime_path(job.pre_chime_hash))
+                except (FileNotFoundError, OSError, ValueError, RuntimeError) as err:
+                    _LOGGER.warning("Intercom chime unavailable: %r", err)
+            with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+                tmp.write(data)
+                tmp.flush()
+                _LOGGER.info("Playing intercom message")
+                await self._play_file(Path(tmp.name))
+        else:
+            raise ValueError(f"unsupported job {job.kind!r}")

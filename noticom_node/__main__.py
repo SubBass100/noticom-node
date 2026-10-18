@@ -10,6 +10,7 @@ from .adoption import AdoptionServer
 from .chimecache import ChimeCache
 from .control import ApplyResult, ControlClient, Outcome
 from .player import Player
+from .ptt import PttController, Recorder
 from .hardware import (
     DEFAULT_BUTTON_NC,
     DEFAULT_BUTTON_PIN,
@@ -36,7 +37,11 @@ def _mixer_values(config: dict) -> dict:
 
 
 async def _node(
-    state: NodeState, button: PushButton, player: Player, cache: ChimeCache
+    state: NodeState,
+    button: PushButton,
+    player: Player,
+    cache: ChimeCache,
+    ptt: PttController,
 ) -> Outcome:
     """Adopt if unclaimed, then stay connected to HA."""
     pairing = state.pairing
@@ -48,6 +53,7 @@ async def _node(
     async def apply_config(config: dict) -> ApplyResult:
         state.save_config(config)
         player.queue.chime_priority = bool(config.get("chime_priority", True))
+        ptt.enabled = bool(config.get("ptt_enabled", True))
         ok = await mixer.apply(**_mixer_values(config))
         pin = int(config.get("button_pin", button.pin))
         nc = bool(config.get("button_nc", button.normally_closed))
@@ -62,7 +68,14 @@ async def _node(
     client = ControlClient(
         state, pairing, apply_config, node_state, player=player, cache=cache
     )
-    return await client.run()
+    ptt.upload = client.upload_clip
+    ptt.on_phase = client.send_ptt
+    # Push-to-talk only runs once paired, so the adoption press can't record.
+    ptt_task = asyncio.create_task(ptt.run())
+    try:
+        return await client.run()
+    finally:
+        ptt_task.cancel()
 
 
 async def run() -> None:
@@ -85,7 +98,9 @@ async def run() -> None:
     player = Player(cache, play_file)
     player.queue.chime_priority = bool(cached.get("chime_priority", True))
     playback = asyncio.create_task(player.run())
-    node = asyncio.create_task(_node(state, button, player, cache))
+    ptt = PttController(button, Recorder(), chirp, cancel_tone, player.set_hold)
+    ptt.enabled = bool(cached.get("ptt_enabled", True))
+    node = asyncio.create_task(_node(state, button, player, cache, ptt))
     try:
         while True:
             reset = asyncio.create_task(button.reset_requested.wait())
@@ -102,7 +117,11 @@ async def run() -> None:
                 # Exit either way; systemd restarts the service.
                 return
             _LOGGER.info("Reset requested (5 presses); waiting for confirmation hold")
-            confirmed = await confirm_reset(button, beeps, speak, cancel_tone)
+            ptt.suspended = True  # the confirmation hold mustn't record a message
+            try:
+                confirmed = await confirm_reset(button, beeps, speak, cancel_tone)
+            finally:
+                ptt.suspended = False
             button.reset_requested.clear()  # ignore presses made during step 2
             if confirmed:
                 node.cancel()
