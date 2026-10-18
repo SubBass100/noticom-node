@@ -17,7 +17,11 @@ import wave
 _LOGGER = logging.getLogger(__name__)
 
 FAKE = os.environ.get("NOTICOM_FAKE_HW") == "1"
-DEFAULT_BUTTON_PIN = 17  # ReSpeaker 2-Mic HAT onboard button
+# Local button defaults, used before HA has sent this node a config (e.g.
+# for the adoption press). Set per node in /etc/noticom/node.env.
+# GPIO17 is the HAT's onboard button; 13 is on its Grove connector.
+DEFAULT_BUTTON_PIN = int(os.environ.get("NOTICOM_BUTTON_PIN", "13"))
+DEFAULT_BUTTON_NC = os.environ.get("NOTICOM_BUTTON_NC", "1") == "1"
 # ALSA card name set by `dtoverlay=wm8960-soundcard,alsaname=seeed2micvoicec`.
 CARD = "seeed2micvoicec"
 # The Pi's default card is its headphone jack, so always name the HAT.
@@ -25,9 +29,18 @@ OUTPUT_DEVICE = f"plughw:CARD={CARD},DEV=0"
 
 
 class PushButton:
-    """A GPIO button exposed as asyncio events."""
+    """A GPIO button to ground, exposed as asyncio events.
 
-    def __init__(self, pin: int = DEFAULT_BUTTON_PIN) -> None:
+    The pin uses the internal pull-up. A normally open button reads high at
+    rest and low when pressed; a normally closed one is the reverse, so for
+    NC we swap gpiozero's (active-low) press and release.
+    """
+
+    def __init__(
+        self, pin: int = DEFAULT_BUTTON_PIN, normally_closed: bool = DEFAULT_BUTTON_NC
+    ) -> None:
+        self.pin = pin
+        self.normally_closed = normally_closed
         self._loop = asyncio.get_running_loop()
         self.pressed = asyncio.Event()
         self.released = asyncio.Event()
@@ -37,17 +50,22 @@ class PushButton:
         from gpiozero import Button  # imported lazily: needs GPIO
 
         self._button = Button(pin, pull_up=True, bounce_time=0.03)
-        self._button.when_pressed = lambda: self._loop.call_soon_threadsafe(
-            self._on_press
+        on_low = lambda: self._loop.call_soon_threadsafe(  # noqa: E731
+            self._on_release if normally_closed else self._on_press
         )
-        self._button.when_released = lambda: self._loop.call_soon_threadsafe(
-            self._on_release
+        on_high = lambda: self._loop.call_soon_threadsafe(  # noqa: E731
+            self._on_press if normally_closed else self._on_release
         )
+        self._button.when_pressed = on_low
+        self._button.when_released = on_high
 
     @property
     def is_pressed(self) -> bool:
-        """Current button state."""
-        return bool(self._button and self._button.is_pressed)
+        """Whether the button is physically held down right now."""
+        if self._button is None:
+            return False
+        low = self._button.is_pressed  # gpiozero: active = pin pulled low
+        return not low if self.normally_closed else low
 
     def _on_press(self) -> None:
         self.released.clear()

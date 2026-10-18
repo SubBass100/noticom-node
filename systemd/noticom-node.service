@@ -9,6 +9,8 @@ Type=simple
 # privileges. Tightening this to a dedicated user is on the to-do list.
 ExecStart=/opt/noticom-node/venv/bin/noticom-node
 Environment=NOTICOM_STATE_DIR=/etc/noticom
+# Per-node button defaults (pin, normally closed); written by install.sh.
+EnvironmentFile=-/etc/noticom/node.env
 Restart=always
 RestartSec=5
 

@@ -64,6 +64,15 @@ python3 -m venv "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install -q "git+$REPO@$REF"
 
 install -d -m 700 "$STATE"
+# Button used before HA sends this node a config (e.g. the adoption press).
+# Override at install time, e.g. NOTICOM_BUTTON_PIN=17 NOTICOM_BUTTON_NC=0.
+if [[ ! -f $STATE/node.env || -n ${NOTICOM_BUTTON_PIN:-}${NOTICOM_BUTTON_NC:-} ]]; then
+  cat > "$STATE/node.env" <<ENV
+NOTICOM_BUTTON_PIN=${NOTICOM_BUTTON_PIN:-13}
+NOTICOM_BUTTON_NC=${NOTICOM_BUTTON_NC:-1}
+ENV
+fi
+log "Button: GPIO$(sed -n 's/^NOTICOM_BUTTON_PIN=//p' "$STATE/node.env"), normally $( [[ $(sed -n 's/^NOTICOM_BUTTON_NC=//p' "$STATE/node.env") == 1 ]] && echo closed || echo open)"
 
 log "Installing systemd service"
 curl -sSL "https://raw.githubusercontent.com/SubBass100/noticom-node/$REF/systemd/noticom-node.service" \
