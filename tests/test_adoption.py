@@ -101,3 +101,23 @@ async def test_hung_chirp_does_not_block_adoption(tmp_path, monkeypatch):
     }), 5)
     assert resp.status == 200
     await client.close()
+
+
+async def test_say_hello_connects(unused_tcp_port_factory=None):
+    import asyncio
+
+    from noticom_node.adoption import say_hello
+
+    seen = asyncio.Event()
+
+    async def handle(reader, writer):
+        seen.set()
+        writer.close()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    assert await say_hello("127.0.0.1", port)
+    await asyncio.wait_for(seen.wait(), 2)
+    server.close()
+    await server.wait_closed()
+    assert not await say_hello("127.0.0.1", port, timeout=1)  # nothing listening now

@@ -132,7 +132,7 @@ journalctl -u noticom-node -f
 |---|---|
 | No sound at all | Check the speaker is in the HAT's speaker connector. Run `aplay -l`: you should see a card called `seeed2micvoicec`. If not, re-run the installer and reboot |
 | The installer says no ReSpeaker was found | Make sure the HAT is pushed firmly onto all the pins, then run the installer again |
-| Home Assistant says "Couldn't reach the node" | Re-run the installer. It turns off Wi-Fi power saving, which stops Home Assistant from reaching the Pi |
+| Home Assistant says "Couldn't reach the node" | Update the node (run the install line again): it now keeps Wi-Fi power saving off and introduces itself to Home Assistant so Home Assistant can find it. As a quick workaround, run `ping -c 3 <your Home Assistant IP>` on the Pi, then try again |
 | The button does nothing | Check the log line `Button GPIO13 …`: it should say *released* when you're not touching it. If it says *PRESSED*, change the button type to normally closed in Home Assistant |
 | Messages sound too quiet or distorted | Adjust the node's **Mic gain** and **Mic boost** in Home Assistant |
 
