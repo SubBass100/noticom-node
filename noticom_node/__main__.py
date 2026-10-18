@@ -8,6 +8,7 @@ import logging
 from . import __version__, mixer
 from .adoption import AdoptionServer
 from .chimecache import ChimeCache
+from .health import check_sound_card, keep_wifi_awake
 from .control import ApplyResult, ControlClient, Outcome
 from .player import Player
 from .ptt import PttController, Recorder
@@ -82,8 +83,10 @@ async def run() -> None:
     """Run the node until it's reset, unpaired or needs a restart."""
     state = NodeState()
     cache = ChimeCache()
+    wifi = asyncio.create_task(keep_wifi_awake())  # HA must always be able to reach us
     cached = state.config  # HA's last config, so settings apply before connecting
-    await mixer.apply(**_mixer_values(cached))
+    if check_sound_card():
+        await mixer.apply(**_mixer_values(cached))
     button = PushButton(
         int(cached.get("button_pin", DEFAULT_BUTTON_PIN)),
         bool(cached.get("button_nc", DEFAULT_BUTTON_NC)),
@@ -131,6 +134,7 @@ async def run() -> None:
                 return
     finally:
         playback.cancel()
+        wifi.cancel()
         button.close()
 
 

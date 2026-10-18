@@ -146,7 +146,11 @@ systemctl daemon-reload
 systemctl enable --now noticom-node.service
 
 if [[ $REBOOT_NEEDED -eq 1 ]]; then
-  log "Sound card overlay added. REBOOT to finish: sudo reboot"
+  printf '\n\033[1;33m%s\033[0m\n' \
+    "==================================================================" \
+    "  ONE MORE STEP: reboot to switch on the sound card:  sudo reboot" \
+    "  (Until you do, the node can't play any sound.)" \
+    "=================================================================="
   log "After the reboot the node appears in Home Assistant under"
 else
   log "Done. The node should now appear in Home Assistant under"

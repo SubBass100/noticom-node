@@ -73,3 +73,31 @@ def test_factory_reset(tmp_path):
     state.factory_reset()
     assert state.pairing is None
     assert protocol.public_key_b64(state.key) != old
+
+
+async def test_hung_chirp_does_not_block_adoption(tmp_path, monkeypatch):
+    import asyncio
+
+    from noticom_node import adoption
+
+    monkeypatch.setattr(adoption, "CHIRP_TIMEOUT_S", 0.1)
+    state = NodeState(tmp_path)
+
+    async def hang():
+        await asyncio.sleep(3600)
+
+    async def pressed(timeout):
+        return True
+
+    server = AdoptionServer(state, pressed, hang)
+    app = web.Application()
+    app.router.add_post("/adopt", server._handle_adopt)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    nonce = protocol.new_nonce()
+    resp = await asyncio.wait_for(client.post("/adopt", json={
+        "server_pubkey": protocol.public_key_b64(protocol.generate_private_key()),
+        "nonce": nonce, "server_url": "http://ha:8123",
+    }), 5)
+    assert resp.status == 200
+    await client.close()

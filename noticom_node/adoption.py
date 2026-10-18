@@ -21,6 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 ADOPT_PORT = 8742
 SERVICE_TYPE = "_noticom._tcp.local."
 BUTTON_WINDOW_S = 60
+CHIRP_TIMEOUT_S = 3
 
 
 def local_ipv4_addresses() -> list[str]:
@@ -111,7 +112,12 @@ class AdoptionServer:
             except (ValueError, KeyError, TypeError):
                 return web.json_response({"error": "bad_request"}, status=400)
 
-            await self._chirp()
+            # The chirp is a courtesy: never let a sound problem block pairing.
+            try:
+                await asyncio.wait_for(self._chirp(), CHIRP_TIMEOUT_S)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Adoption chirp failed (%r); waiting for the button anyway", err)
+            _LOGGER.info("Adoption requested; press the button within %d s", BUTTON_WINDOW_S)
             if not await self._wait_for_press(BUTTON_WINDOW_S):
                 return web.json_response({"error": "button_timeout"}, status=408)
 

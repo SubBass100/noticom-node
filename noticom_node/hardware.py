@@ -31,6 +31,7 @@ RESET_WINDOW_S = 4.0
 CARD = "seeed2micvoicec"
 # The Pi's default card is its headphone jack, so always name the HAT.
 OUTPUT_DEVICE = f"plughw:CARD={CARD},DEV=0"
+SHORT_SOUND_TIMEOUT_S = 8  # beeps and prompts; chimes/messages use play_file
 
 
 class PushButton:
@@ -140,8 +141,25 @@ async def play_wav_bytes(data: bytes, device: str = OUTPUT_DEVICE) -> None:
     proc = await asyncio.create_subprocess_exec(
         "aplay", "-q", "-D", device, "-",
         stdin=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    await proc.communicate(data)
+    try:
+        # Short sounds only: a broken sound card can make aplay hang.
+        _, err = await asyncio.wait_for(proc.communicate(data), SHORT_SOUND_TIMEOUT_S)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        _LOGGER.warning(
+            "Playing a sound on %s hung for %d s; the sound card isn't working. "
+            "Check: speaker-test -D %s -c 2 -t sine -l 1",
+            device, SHORT_SOUND_TIMEOUT_S, device,
+        )
+        return
+    if proc.returncode != 0:
+        _LOGGER.warning(
+            "Couldn't play a sound on %s: %s", device,
+            err.decode(errors="replace").strip() or f"aplay exited {proc.returncode}",
+        )
 
 
 async def chirp(device: str = OUTPUT_DEVICE) -> None:
