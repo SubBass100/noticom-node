@@ -58,3 +58,27 @@ async def test_wait_for_press_times_out():
     await settle()
     assert not await button.wait_for_press(0.1)
     button.close()
+
+
+async def test_five_quick_presses_request_reset(monkeypatch):
+    button = hardware.PushButton(13, normally_closed=True)
+    pin = Device.pin_factory.pin(13)
+    pin.drive_low()
+    await settle()
+    for _ in range(hardware.RESET_PRESSES - 1):
+        pin.drive_high(); await settle(); pin.drive_low(); await settle()
+    assert not button.reset_requested.is_set()
+    pin.drive_high(); await settle()
+    assert button.reset_requested.is_set()
+    button.close()
+
+
+async def test_slow_presses_do_not_reset(monkeypatch):
+    button = hardware.PushButton(13, normally_closed=False)
+    clock = [100.0]
+    monkeypatch.setattr(hardware.time, "monotonic", lambda: clock[0])
+    for _ in range(hardware.RESET_PRESSES + 2):
+        button._on_press()
+        clock[0] += 1.5  # 5 presses span 6 s > 4 s window
+    assert not button.reset_requested.is_set()
+    button.close()

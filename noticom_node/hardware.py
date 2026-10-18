@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import struct
+import time
 import wave
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +23,10 @@ FAKE = os.environ.get("NOTICOM_FAKE_HW") == "1"
 # GPIO17 is the HAT's onboard button; 13 is on its Grove connector.
 DEFAULT_BUTTON_PIN = int(os.environ.get("NOTICOM_BUTTON_PIN", "13"))
 DEFAULT_BUTTON_NC = os.environ.get("NOTICOM_BUTTON_NC", "1") == "1"
+# Factory reset: this many presses within RESET_WINDOW_S seconds. A gesture,
+# not a long hold, because a broken wire on an NC button reads as held forever.
+RESET_PRESSES = 5
+RESET_WINDOW_S = 4.0
 # ALSA card name set by `dtoverlay=wm8960-soundcard,alsaname=seeed2micvoicec`.
 CARD = "seeed2micvoicec"
 # The Pi's default card is its headphone jack, so always name the HAT.
@@ -44,6 +49,8 @@ class PushButton:
         self._loop = asyncio.get_running_loop()
         self.pressed = asyncio.Event()
         self.released = asyncio.Event()
+        self.reset_requested = asyncio.Event()
+        self._press_times: list[float] = []
         self._button = None
         if FAKE:
             return
@@ -67,9 +74,23 @@ class PushButton:
         low = self._button.is_pressed  # gpiozero: active = pin pulled low
         return not low if self.normally_closed else low
 
+    @property
+    def pin_level(self) -> str:
+        """Raw pin level, for diagnostics."""
+        if self._button is None:
+            return "n/a"
+        return "LOW" if self._button.is_pressed else "HIGH"
+
     def _on_press(self) -> None:
         self.released.clear()
         self.pressed.set()
+        now = time.monotonic()
+        self._press_times = [
+            t for t in self._press_times if now - t <= RESET_WINDOW_S
+        ] + [now]
+        if len(self._press_times) >= RESET_PRESSES:
+            self._press_times.clear()
+            self.reset_requested.set()
 
     def _on_release(self) -> None:
         self.pressed.clear()

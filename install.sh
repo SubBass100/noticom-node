@@ -64,6 +64,7 @@ fi
 log "Installing noticom-node ($REF) into $PREFIX"
 # --system-site-packages so the venv sees apt's lgpio and NumPy. Recreated
 # each run so re-installs and upgrades start clean.
+systemctl stop noticom-node.service 2>/dev/null || true
 rm -rf "$PREFIX/venv"
 python3 -m venv --system-site-packages "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install -q --upgrade pip
