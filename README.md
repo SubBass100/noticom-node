@@ -1,89 +1,166 @@
-# noticom-node
+<p align="center">
+  <img src="docs/noticom-icon.png" alt="Noticom icon" width="140">
+</p>
 
-Raspberry Pi node software for [Noticom](https://github.com/SubBass100/noticom),
-the notification-chime and push-to-talk intercom for Home Assistant.
+<h1 align="center">noticom-node</h1>
 
-**Hardware:** Raspberry Pi 3 or newer, ReSpeaker 2-Mic Pi HAT (or the
-Keyestudio clone), a small speaker on the HAT's speaker output, and a button
-from a GPIO pin to ground (default GPIO13, normally open; normally closed
-buttons are supported too).
+<p align="center"><b>Turns a Raspberry Pi into a Noticom speaker: it plays chimes from Home Assistant and works as a push-to-talk intercom.</b></p>
 
-> **Status: early, feature-complete.** The installer sets up the ReSpeaker
-> sound card; nodes adopt into Home Assistant, stay connected, follow its
-> settings, play chimes, and work as push-to-talk intercoms.
+---
 
-**Using the button:** hold it, wait for the chirp, talk (up to 45 s), let
-go to send. A low tone means the message couldn't be sent. Quick taps do
-nothing (except the factory-reset gesture below).
+This is the software for the speakers (we call them **nodes**) used by
+[Noticom](https://github.com/SubBass100/noticom), a chime and intercom
+system for Home Assistant. Install Noticom in Home Assistant first, then
+follow these steps for each node.
 
-## Install
+## What you need for each node
 
-On a fresh Pi with Raspberry Pi OS Lite (tested on Debian 13 "trixie", Pi 3)
-with the HAT attached:
+- **Raspberry Pi 3 or newer**, with a power supply and a microSD card
+- **ReSpeaker 2-Mic Pi HAT** (the Keyestudio version works too)
+- **A small speaker**, plugged into the HAT's speaker connector
+- **A push button**
+
+## Wiring
+
+1. Push the ReSpeaker HAT onto the Pi's pin header.
+2. Plug the speaker into the HAT's **speaker** connector.
+3. Connect the button between **GPIO13** and **ground (GND)**. GPIO13 is
+   available on the HAT's Grove connector.
+
+Using a different pin, or the button built into the HAT (GPIO17)? That's
+fine. See [Using a different button](#using-a-different-button) below.
+
+## Setting up a node
+
+### 1. Prepare the Pi
+
+1. Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to put
+   **Raspberry Pi OS Lite (64-bit)** on the microSD card.
+2. In Imager's settings, set a **hostname** (for example
+   `noticom-kitchen`), a **username and password**, your **Wi-Fi**, and
+   turn on **SSH**.
+3. Put the card in the Pi and power it up.
+
+### 2. Install the software
+
+Connect to the Pi with SSH (for example `ssh pi@noticom-kitchen.local`)
+and run this one line:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo bash
 ```
 
-The installer also sets up a natural-sounding offline voice
-([Piper](https://github.com/OHF-Voice/piper1-gpl), voice `en_US-amy-medium`)
-for the node's spoken prompts, which adds a few minutes on a Pi 3. If that
-fails, or you skip it with `NOTICOM_VOICE=espeak`, prompts use espeak-ng.
+The installer sets up the sound card, the button, a natural-sounding voice
+for spoken prompts, and the Noticom service. It takes a few minutes, and
+longer on a Pi 3.
 
-For a different button, set it at install time, e.g. the HAT's onboard
-button:
+**If it asks you to reboot, run `sudo reboot`.** That only happens the
+first time, to switch on the sound card.
+
+### 3. Add it to Home Assistant
+
+1. In Home Assistant, go to **Settings → Devices & services**. The node
+   appears under **Discovered** within a minute or two.
+2. Click **Add**, give it a name (like *Kitchen*), and click **Submit**.
+3. The node beeps. **Press its button within 60 seconds.**
+
+Done. You can now play chimes on it from automations, and use its button
+as an intercom.
+
+> **It didn't show up?** In Home Assistant click **Add integration**,
+> search **Noticom**, and enter the Pi's IP address. Run `hostname -I` on
+> the Pi to find it.
+
+## Using the button
+
+| Do this | What happens |
+|---|---|
+| **Hold** the button, wait for the beep, talk, let go | Sends your message to the other nodes |
+| **Tap** it | Nothing, so a bump won't send anything |
+| **Press 5 times quickly**, then **hold for 5 seconds** when asked | Factory reset (see below) |
+
+A **low tone** after you let go means the message couldn't be sent,
+usually because the node or Home Assistant is offline.
+
+## Factory reset
+
+A reset makes the node forget its Home Assistant, so you can add it again
+(or to a different Home Assistant).
+
+1. Press the button **5 times quickly**. The node beeps 3 times and says
+   *"To factory reset, press and hold the button for five seconds."*
+2. **Press and hold** the button for 5 seconds, until it beeps 3 more
+   times.
+
+If you don't press, or you let go too soon, it says *"Reset cancelled"* and
+nothing changes. Deleting the node in Home Assistant also resets it.
+
+## Using a different button
+
+The button pin and type can be changed any time in Home Assistant: open
+the node under **Settings → Devices & services → Noticom** and click
+**Configure**.
+
+You can also set them when installing. For example, to use the HAT's
+built-in button:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo NOTICOM_BUTTON_PIN=17 bash
 ```
 
-Reboot when the installer asks (first install adds the sound card overlay).
-The node then advertises itself on your LAN. In Home Assistant, open the discovered
-Noticom node, click **Adopt**, and press the node's button within 60 seconds.
+Add `NOTICOM_BUTTON_NC=1` if your button is **normally closed** (connected
+until pressed). Most buttons are normally open.
 
-**Factory reset** (two steps, so it can't happen by accident):
+## Updating
 
-1. Press the button 5 times quickly (within 4 seconds). The node beeps 3
-   times and says "To factory reset, press and hold the button for five
-   seconds."
-2. Within 10 seconds, press and hold for 5 seconds until it beeps 3 more
-   times. The node forgets Home Assistant and advertises itself again.
+Run the install line again. Your node stays connected to Home Assistant
+and keeps its settings.
 
-Not pressing, or letting go early, cancels with a low tone and "Reset
-cancelled."
+```sh
+curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo bash
+```
 
-## Layout
+## Troubleshooting
 
-| Path | What |
+See what the node is doing:
+
+```sh
+journalctl -u noticom-node -f
+```
+
+| Problem | What to try |
 |---|---|
-| `noticom_node/adoption.py` | mDNS advertisement + `POST /adopt` handshake |
-| `noticom_node/control.py` | Live connection to HA: mutual auth, config, unpair, reconnect |
-| `noticom_node/state.py` | Identity key, node id, pairing and cached config in `/etc/noticom` |
-| `noticom_node/reset.py` | Two-step factory reset confirmation |
-| `noticom_node/prompts.py` | Spoken prompts, pre-rendered with Piper (`noticom-node render-prompts`) |
-| `noticom_node/playqueue.py` | Playback queue rules (1 playing + 5 waiting, chime priority) |
-| `noticom_node/player.py` | Runs queued jobs (chimes, intercom messages) and reports status to HA |
-| `noticom_node/ptt.py` | Push-to-talk: hold detection, recording, upload |
-| `noticom_node/chimecache.py` | Chime cache by SHA-256, synced from HA |
-| `noticom_node/hardware.py` | Button (gpiozero) and audio (aplay) |
-| `noticom_node/mixer.py` | WM8960 mixer state: mono output, mic routing, gains |
-| `noticom_node/audio.py` | Recording processing: stereo to mono, normalize |
-| `noticom_node/protocol.py` | Wire protocol; mirror of the integration's copy |
+| No sound at all | Check the speaker is in the HAT's speaker connector. Run `aplay -l`: you should see a card called `seeed2micvoicec`. If not, re-run the installer and reboot |
+| The installer says no ReSpeaker was found | Make sure the HAT is pushed firmly onto all the pins, then run the installer again |
+| Home Assistant says "Couldn't reach the node" | Re-run the installer. It turns off Wi-Fi power saving, which stops Home Assistant from reaching the Pi |
+| The button does nothing | Check the log line `Button GPIO13 …`: it should say *released* when you're not touching it. If it says *PRESSED*, change the button type to normally closed in Home Assistant |
+| Messages sound too quiet or distorted | Adjust the node's **Mic gain** and **Mic boost** in Home Assistant |
 
-The protocol spec is
-[docs/DESIGN.md](https://github.com/SubBass100/noticom/blob/main/docs/DESIGN.md)
-in the integration repo.
+## For developers
 
-## Development
+The protocol and design are in Noticom's
+[docs/DESIGN.md](https://github.com/SubBass100/noticom/blob/main/docs/DESIGN.md).
 
-Runs off the Pi with fake hardware:
+Run it on any computer without the hardware:
 
 ```sh
 pip install -e ".[dev]"
 python -m pytest
-NOTICOM_FAKE_HW=1 NOTICOM_STATE_DIR=./dev-state noticom-node
+NOTICOM_FAKE_HW=1 NOTICOM_STATE_DIR=./dev-state NOTICOM_CACHE_DIR=./dev-cache noticom-node
 ```
+
+| File | What it does |
+|---|---|
+| `noticom_node/adoption.py` | Announces the node on the network and handles being added |
+| `noticom_node/control.py` | Stays connected to Home Assistant and follows its settings |
+| `noticom_node/player.py`, `playqueue.py` | Plays chimes and messages, one at a time, up to 5 waiting |
+| `noticom_node/chimecache.py` | Keeps a copy of every chime on the node |
+| `noticom_node/ptt.py` | Push-to-talk recording |
+| `noticom_node/audio.py`, `mixer.py` | Sound processing and sound card settings |
+| `noticom_node/reset.py`, `prompts.py` | Factory reset and the spoken prompts |
+| `noticom_node/state.py` | The node's identity and pairing (in `/etc/noticom`) |
+| `install.sh` | The one-line installer |
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)
