@@ -17,7 +17,10 @@ log "OS: ${PRETTY_NAME:-unknown}, kernel $(uname -r)"
 
 log "Installing system packages"
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-dev alsa-utils git
+# GPIO (lgpio) and NumPy come from apt: lgpio isn't usable from a plain pip
+# install, and apt's NumPy avoids slow source builds on 32-bit Pi OS.
+apt-get install -y -qq python3 python3-venv python3-dev python3-lgpio \
+  python3-numpy alsa-utils git
 
 # --- ReSpeaker 2-Mic HAT -----------------------------------------------
 # The v1 board (and the Keyestudio clone) has a WM8960 codec at I2C 0x1a.
@@ -59,7 +62,10 @@ fi
 # noticom-node service itself at startup, so nothing to store here.
 
 log "Installing noticom-node ($REF) into $PREFIX"
-python3 -m venv "$PREFIX/venv"
+# --system-site-packages so the venv sees apt's lgpio and NumPy. Recreated
+# each run so re-installs and upgrades start clean.
+rm -rf "$PREFIX/venv"
+python3 -m venv --system-site-packages "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install -q --upgrade pip
 "$PREFIX/venv/bin/pip" install -q "git+$REPO@$REF"
 
