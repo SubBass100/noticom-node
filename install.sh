@@ -19,13 +19,44 @@ log "Installing system packages"
 apt-get update -qq
 apt-get install -y -qq python3 python3-venv python3-dev alsa-utils git
 
-# TODO: ReSpeaker 2-Mic HAT driver/overlay. The right steps depend on the
-# board revision (WM8960 vs TLV320AIC3104 codec) and the Pi OS release, so
-# this is filled in once tested on real hardware. Until then, set the HAT up
-# by hand and confirm it shows up in `aplay -l`.
-if ! aplay -l 2>/dev/null | grep -qiE 'seeed|wm8960|respeaker|tlv320'; then
-  log "WARNING: no ReSpeaker sound card detected in 'aplay -l' yet."
+# --- ReSpeaker 2-Mic HAT -----------------------------------------------
+# The v1 board (and the Keyestudio clone) has a WM8960 codec at I2C 0x1a.
+# Seeed's respeaker-2mic-v1_0 overlay doesn't supply the codec's master
+# clock on current kernels (playback fails: "no PCM clock"), so we use the
+# kernel's stock wm8960-soundcard overlay, keeping Seeed's card name.
+CONFIG_TXT=/boot/firmware/config.txt
+OVERLAY_LINE="dtoverlay=wm8960-soundcard,alsaname=seeed2micvoicec"
+REBOOT_NEEDED=0
+
+apt-get install -y -qq i2c-tools
+if command -v raspi-config >/dev/null; then
+  raspi-config nonint do_i2c 0
 fi
+
+probe() {  # probe <hex addr>: true if a device (or a bound driver) answers
+  i2cdetect -y 1 "0x$1" "0x$1" 2>/dev/null | grep -qE "^[0-9a-f]0:.*($1|UU)"
+}
+
+if probe 1a; then
+  log "Found ReSpeaker 2-Mic HAT v1 (WM8960 codec)"
+  [[ -f $CONFIG_TXT ]] || die "$CONFIG_TXT not found"
+  # Drop Seeed's broken overlay if someone installed it by hand.
+  if grep -qE '^dtoverlay=respeaker-2mic-v1_0' "$CONFIG_TXT"; then
+    sed -i 's/^dtoverlay=respeaker-2mic-v1_0/#&  # replaced by noticom/' "$CONFIG_TXT"
+    REBOOT_NEEDED=1
+  fi
+  if ! grep -qxF "$OVERLAY_LINE" "$CONFIG_TXT"; then
+    printf '\n# noticom: ReSpeaker 2-Mic HAT\n%s\n' "$OVERLAY_LINE" >> "$CONFIG_TXT"
+    REBOOT_NEEDED=1
+  fi
+elif probe 18; then
+  log "WARNING: found a ReSpeaker 2-Mic HAT v2 (TLV320AIC3104 codec)."
+  log "         v2 boards aren't supported by the installer yet."
+else
+  log "WARNING: no ReSpeaker codec found on I2C bus 1. Is the HAT seated?"
+fi
+# Mixer levels (mono output, mic routing, gains) are applied by the
+# noticom-node service itself at startup, so nothing to store here.
 
 log "Installing noticom-node ($REF) into $PREFIX"
 python3 -m venv "$PREFIX/venv"
@@ -40,6 +71,11 @@ curl -sSL "https://raw.githubusercontent.com/SubBass100/noticom-node/$REF/system
 systemctl daemon-reload
 systemctl enable --now noticom-node.service
 
-log "Done. The node should now appear in Home Assistant under"
+if [[ $REBOOT_NEEDED -eq 1 ]]; then
+  log "Sound card overlay added. REBOOT to finish: sudo reboot"
+  log "After the reboot the node appears in Home Assistant under"
+else
+  log "Done. The node should now appear in Home Assistant under"
+fi
 log "Settings -> Devices & services as a discovered Noticom node."
 log "Logs: journalctl -u noticom-node -f"

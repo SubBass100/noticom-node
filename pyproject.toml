@@ -14,6 +14,7 @@ dependencies = [
   "cryptography>=42",
   "zeroconf>=0.132",
   "gpiozero>=2.0",
+  "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

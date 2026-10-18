@@ -7,19 +7,21 @@ the notification-chime and push-to-talk intercom for Home Assistant.
 Keyestudio clone), a small speaker on the HAT's speaker output, and a button
 on a GPIO pin (default GPIO17, the HAT's onboard button).
 
-> **Status: early scaffold.** Adoption into Home Assistant works; the control
-> channel, chime playback and PTT recording are next. The installer doesn't
-> set up the ReSpeaker driver yet.
+> **Status: early scaffold.** Adoption into Home Assistant works and the
+> installer sets up the ReSpeaker sound card; the control channel, chime
+> playback and PTT recording are next.
 
 ## Install
 
-On a fresh Pi with Raspberry Pi OS:
+On a fresh Pi with Raspberry Pi OS Lite (tested on Debian 13 "trixie", Pi 3)
+with the HAT attached:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo bash
 ```
 
-The node advertises itself on your LAN. In Home Assistant, open the discovered
+Reboot when the installer asks (first install adds the sound card overlay).
+The node then advertises itself on your LAN. In Home Assistant, open the discovered
 Noticom node, click **Adopt**, and press the node's button within 60 seconds.
 
 **Factory reset:** hold the button for 10 seconds while the service starts
@@ -33,6 +35,8 @@ Noticom node, click **Adopt**, and press the node's button within 60 seconds.
 | `noticom_node/state.py` | Identity key, node id and pairing in `/etc/noticom` |
 | `noticom_node/playqueue.py` | Playback queue rules (1 playing + 5 waiting, chime priority) |
 | `noticom_node/hardware.py` | Button (gpiozero) and audio (aplay) |
+| `noticom_node/mixer.py` | WM8960 mixer state: mono output, mic routing, gains |
+| `noticom_node/audio.py` | Recording processing: stereo to mono, normalize |
 | `noticom_node/protocol.py` | Wire protocol; mirror of the integration's copy |
 
 The protocol spec is

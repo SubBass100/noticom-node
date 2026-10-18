@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from . import __version__
+from . import __version__, mixer
 from .adoption import AdoptionServer
 from .hardware import FAKE, PushButton, chirp
 from .state import NodeState
@@ -32,6 +32,8 @@ async def _check_factory_reset(button: PushButton, state: NodeState) -> None:
 async def run() -> None:
     """Adopt if unclaimed, then run the control channel."""
     state = NodeState()
+    # TODO: use HA's values for this node once the control channel exists.
+    await mixer.apply()
     button = PushButton()
     try:
         await _check_factory_reset(button, state)

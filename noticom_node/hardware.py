@@ -18,6 +18,10 @@ _LOGGER = logging.getLogger(__name__)
 
 FAKE = os.environ.get("NOTICOM_FAKE_HW") == "1"
 DEFAULT_BUTTON_PIN = 17  # ReSpeaker 2-Mic HAT onboard button
+# ALSA card name set by `dtoverlay=wm8960-soundcard,alsaname=seeed2micvoicec`.
+CARD = "seeed2micvoicec"
+# The Pi's default card is its headphone jack, so always name the HAT.
+OUTPUT_DEVICE = f"plughw:CARD={CARD},DEV=0"
 
 
 class PushButton:
@@ -89,7 +93,7 @@ def beep_wav(freq: float = 1000, ms: int = 120, rate: int = 16000) -> bytes:
     return buf.getvalue()
 
 
-async def play_wav_bytes(data: bytes, device: str = "default") -> None:
+async def play_wav_bytes(data: bytes, device: str = OUTPUT_DEVICE) -> None:
     """Play WAV bytes through ALSA via aplay."""
     if FAKE:
         _LOGGER.info("[fake] play %d bytes on %s", len(data), device)
@@ -101,6 +105,6 @@ async def play_wav_bytes(data: bytes, device: str = "default") -> None:
     await proc.communicate(data)
 
 
-async def chirp(device: str = "default") -> None:
+async def chirp(device: str = OUTPUT_DEVICE) -> None:
     """Quick beep: 'I'm listening' / 'press to confirm'."""
     await play_wav_bytes(beep_wav(), device)
