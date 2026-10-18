@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "noticom-node"
+version = "0.1.0"
+description = "Raspberry Pi node for the Noticom Home Assistant intercom"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+  "aiohttp>=3.9",
+  "cryptography>=42",
+  "zeroconf>=0.132",
+  "gpiozero>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+noticom-node = "noticom_node.__main__:main"
+
+[tool.setuptools]
+packages = ["noticom_node"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Noticom
+.vscode/
+.idea/
+.DS_Store
+*.key
+*.pem
+/config.yaml
+/dev-state/
+*.wav

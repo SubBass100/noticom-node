@@ -1,0 +1,75 @@
+"""Adoption handshake, checked the same way the HA config flow checks it."""
+
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
+
+from noticom_node import protocol
+from noticom_node.adoption import AdoptionServer
+from noticom_node.state import NodeState
+
+
+async def _client(tmp_path, pressed: bool):
+    state = NodeState(tmp_path)
+
+    async def wait_for_press(timeout):
+        return pressed
+
+    async def chirp():
+        pass
+
+    server = AdoptionServer(state, wait_for_press, chirp)
+    app = web.Application()
+    app.router.add_post("/adopt", server._handle_adopt)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    return client, state
+
+
+async def test_adopt_success(tmp_path):
+    client, state = await _client(tmp_path, pressed=True)
+    server_key = protocol.generate_private_key()
+    nonce = protocol.new_nonce()
+    resp = await client.post(
+        "/adopt",
+        json={
+            "server_pubkey": protocol.public_key_b64(server_key),
+            "nonce": nonce,
+            "server_url": "http://ha.local:8123",
+        },
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["node_id"] == state.node_id
+    assert protocol.verify(body["node_pubkey"], protocol.b64d(nonce), body["sig"])
+    assert state.pairing.server_url == "http://ha.local:8123"
+    assert oct((tmp_path / "node.key").stat().st_mode & 0o777) == "0o600"
+    await client.close()
+
+
+async def test_adopt_button_timeout(tmp_path):
+    client, state = await _client(tmp_path, pressed=False)
+    resp = await client.post(
+        "/adopt",
+        json={"server_pubkey": "x", "nonce": protocol.new_nonce(), "server_url": "u"},
+    )
+    assert resp.status == 408
+    assert state.pairing is None
+    await client.close()
+
+
+async def test_adopt_bad_request(tmp_path):
+    client, _ = await _client(tmp_path, pressed=True)
+    resp = await client.post("/adopt", json={"nonce": "not base64!!"})
+    assert resp.status == 400
+    await client.close()
+
+
+def test_factory_reset(tmp_path):
+    state = NodeState(tmp_path)
+    old = protocol.public_key_b64(state.key)
+    from noticom_node.state import Pairing
+
+    state.save_pairing(Pairing("k", "u"))
+    state.factory_reset()
+    assert state.pairing is None
+    assert protocol.public_key_b64(state.key) != old

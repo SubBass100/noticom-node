@@ -1,0 +1,16 @@
+[Unit]
+Description=Noticom intercom node
+Wants=network-online.target
+After=network-online.target sound.target
+
+[Service]
+Type=simple
+# Runs as root for now: GPIO, ALSA mixer and NetworkManager changes all need
+# privileges. Tightening this to a dedicated user is on the to-do list.
+ExecStart=/opt/noticom-node/venv/bin/noticom-node
+Environment=NOTICOM_STATE_DIR=/etc/noticom
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
