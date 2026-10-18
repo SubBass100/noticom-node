@@ -20,7 +20,7 @@ apt-get update -qq
 # GPIO (lgpio) and NumPy come from apt: lgpio isn't usable from a plain pip
 # install, and apt's NumPy avoids slow source builds on 32-bit Pi OS.
 apt-get install -y -qq python3 python3-venv python3-dev python3-lgpio \
-  python3-numpy alsa-utils git
+  python3-numpy alsa-utils git iw
 
 # --- ReSpeaker 2-Mic HAT -----------------------------------------------
 # The v1 board (and the Keyestudio clone) has a WM8960 codec at I2C 0x1a.
@@ -60,6 +60,31 @@ else
 fi
 # Mixer levels (mono output, mic routing, gains) are applied by the
 # noticom-node service itself at startup, so nothing to store here.
+
+# --- Wi-Fi power saving ---------------------------------------------------
+# With power saving on, the Pi's Wi-Fi misses incoming ARP lookups: the node
+# can reach HA but HA gets "No route to host" connecting to the node. A node
+# must stay reachable, so turn it off for every Wi-Fi connection, now and
+# for good (NetworkManager global default; 2 = disable).
+if [[ -d /etc/NetworkManager/conf.d ]]; then
+  cat > /etc/NetworkManager/conf.d/noticom-wifi-powersave.conf <<'NM'
+# Written by the noticom-node installer: keep Wi-Fi awake so Home
+# Assistant can always reach this node.
+[connection]
+wifi.powersave = 2
+NM
+  if command -v nmcli >/dev/null; then
+    while IFS=: read -r name type; do
+      [[ $type == 802-11-wireless ]] || continue
+      nmcli connection modify "$name" 802-11-wireless.powersave 2 || true
+    done < <(nmcli -t -f NAME,TYPE connection show)
+  fi
+fi
+for dev in /sys/class/net/*/wireless; do
+  [[ -e $dev ]] || continue
+  iface=$(basename "$(dirname "$dev")")
+  iw "$iface" set power_save off 2>/dev/null && log "Wi-Fi power saving off on $iface"
+done
 
 log "Installing noticom-node ($REF) into $PREFIX"
 # --system-site-packages so the venv sees apt's lgpio and NumPy. Recreated
