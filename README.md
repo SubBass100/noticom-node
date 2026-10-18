@@ -32,8 +32,16 @@ Reboot when the installer asks (first install adds the sound card overlay).
 The node then advertises itself on your LAN. In Home Assistant, open the discovered
 Noticom node, click **Adopt**, and press the node's button within 60 seconds.
 
-**Factory reset:** press the button 5 times quickly (within 4 seconds). The
-node chirps three times, forgets Home Assistant and advertises itself again.
+**Factory reset** (two steps, so it can't happen by accident):
+
+1. Press the button 5 times quickly (within 4 seconds). The node beeps 3
+   times and says "To factory reset, press and hold the button for five
+   seconds."
+2. Within 10 seconds, press and hold for 5 seconds until it beeps 3 more
+   times. The node forgets Home Assistant and advertises itself again.
+
+Not pressing, or letting go early, cancels with a low tone and "Reset
+cancelled."
 
 ## Layout
 

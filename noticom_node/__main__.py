@@ -7,7 +7,8 @@ import logging
 
 from . import __version__, mixer
 from .adoption import AdoptionServer
-from .hardware import RESET_PRESSES, PushButton, chirp
+from .hardware import PushButton, beeps, cancel_tone, chirp, speak
+from .reset import confirm_reset
 from .state import NodeState
 
 _LOGGER = logging.getLogger("noticom_node")
@@ -39,20 +40,26 @@ async def run() -> None:
         "PRESSED" if button.is_pressed else "released",
     )
     node = asyncio.create_task(_node(state, button))
-    reset = asyncio.create_task(button.reset_requested.wait())
     try:
-        done, _ = await asyncio.wait({node, reset}, return_when=asyncio.FIRST_COMPLETED)
-        if node in done:
-            node.result()  # re-raise a crash so systemd restarts us
-        else:
-            node.cancel()
-            state.factory_reset()
-            _LOGGER.warning("Factory reset (%d presses): pairing and key removed", RESET_PRESSES)
-            for _ in range(3):
-                await chirp()
-            # Exit; systemd restarts the service unclaimed and advertising.
+        while True:
+            reset = asyncio.create_task(button.reset_requested.wait())
+            done, _ = await asyncio.wait(
+                {node, reset}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if node in done:
+                reset.cancel()
+                node.result()  # re-raise a crash so systemd restarts us
+                return
+            _LOGGER.info("Reset requested (5 presses); waiting for confirmation hold")
+            confirmed = await confirm_reset(button, beeps, speak, cancel_tone)
+            button.reset_requested.clear()  # ignore presses made during step 2
+            if confirmed:
+                node.cancel()
+                state.factory_reset()
+                _LOGGER.warning("Factory reset: pairing and identity key removed")
+                # Exit; systemd restarts the service unclaimed and advertising.
+                return
     finally:
-        reset.cancel()
         button.close()
 
 

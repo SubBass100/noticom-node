@@ -147,3 +147,34 @@ async def play_wav_bytes(data: bytes, device: str = OUTPUT_DEVICE) -> None:
 async def chirp(device: str = OUTPUT_DEVICE) -> None:
     """Quick beep: 'I'm listening' / 'press to confirm'."""
     await play_wav_bytes(beep_wav(), device)
+
+
+async def beeps(count: int, freq: float = 1400, device: str = OUTPUT_DEVICE) -> None:
+    """A run of short beeps, e.g. 3 for 'reset step reached'."""
+    for _ in range(count):
+        await play_wav_bytes(beep_wav(freq=freq, ms=110), device)
+        await asyncio.sleep(0.08)
+
+
+async def cancel_tone(device: str = OUTPUT_DEVICE) -> None:
+    """A low, longer tone meaning 'cancelled'."""
+    await play_wav_bytes(beep_wav(freq=400, ms=450), device)
+
+
+async def speak(text: str, device: str = OUTPUT_DEVICE) -> None:
+    """Say text with espeak-ng (offline). Falls back to logging if missing."""
+    if FAKE:
+        _LOGGER.info("[fake] say: %s", text)
+        return
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "espeak-ng", "-v", "en-us", "-s", "150", "-a", "200", "--stdout", text,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        _LOGGER.warning("espeak-ng not installed; can't say: %s", text)
+        return
+    wav, _ = await proc.communicate()
+    if wav:
+        await play_wav_bytes(wav, device)
