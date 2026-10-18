@@ -25,6 +25,11 @@ with the HAT attached:
 curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo bash
 ```
 
+The installer also sets up a natural-sounding offline voice
+([Piper](https://github.com/OHF-Voice/piper1-gpl), voice `en_US-amy-medium`)
+for the node's spoken prompts, which adds a few minutes on a Pi 3. If that
+fails, or you skip it with `NOTICOM_VOICE=espeak`, prompts use espeak-ng.
+
 For a different button, set it at install time, e.g. the HAT's onboard
 button:
 
@@ -55,6 +60,7 @@ cancelled."
 | `noticom_node/control.py` | Live connection to HA: mutual auth, config, unpair, reconnect |
 | `noticom_node/state.py` | Identity key, node id, pairing and cached config in `/etc/noticom` |
 | `noticom_node/reset.py` | Two-step factory reset confirmation |
+| `noticom_node/prompts.py` | Spoken prompts, pre-rendered with Piper (`noticom-node render-prompts`) |
 | `noticom_node/playqueue.py` | Playback queue rules (1 playing + 5 waiting, chime priority) |
 | `noticom_node/player.py` | Runs queued jobs (chimes, intercom messages) and reports status to HA |
 | `noticom_node/ptt.py` | Push-to-talk: hold detection, recording, upload |

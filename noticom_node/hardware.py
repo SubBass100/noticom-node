@@ -162,9 +162,14 @@ async def cancel_tone(device: str = OUTPUT_DEVICE) -> None:
 
 
 async def speak(text: str, device: str = OUTPUT_DEVICE) -> None:
-    """Say text with espeak-ng (offline). Falls back to logging if missing."""
+    """Say text: the Piper-rendered prompt if there is one, else espeak-ng."""
     if FAKE:
         _LOGGER.info("[fake] say: %s", text)
+        return
+    from .prompts import cached  # noqa: PLC0415 - keeps hardware import-light
+
+    if (rendered := cached(text)) is not None:
+        await play_file(rendered, device)
         return
     try:
         proc = await asyncio.create_subprocess_exec(

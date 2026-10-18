@@ -95,6 +95,39 @@ python3 -m venv --system-site-packages "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install -q --upgrade pip
 "$PREFIX/venv/bin/pip" install -q "git+$REPO@$REF"
 
+# --- Natural voice for spoken prompts (optional) -------------------------
+# Renders the node's few fixed prompts once with Piper (offline neural TTS)
+# in its own venv. Anything failing here just leaves the espeak-ng voice.
+# Skip with NOTICOM_VOICE=espeak.
+VOICE_NAME="en_US-amy-medium"
+PIPER_VENV="$PREFIX/piper"
+VOICE_DIR="$PREFIX/voices"
+PROMPT_DIR=/var/cache/noticom/prompts
+if [[ ${NOTICOM_VOICE:-piper} == piper ]]; then
+  log "Setting up a natural voice for spoken prompts (a few minutes on a Pi 3)"
+  if ! "$PIPER_VENV/bin/python" -c "import piper" 2>/dev/null; then
+    rm -rf "$PIPER_VENV"
+    { python3 -m venv "$PIPER_VENV" && "$PIPER_VENV/bin/pip" install -q piper-tts; } \
+      || log "WARNING: couldn't install Piper; prompts will use the espeak voice."
+  fi
+  if "$PIPER_VENV/bin/python" -c "import piper" 2>/dev/null; then
+    install -d "$VOICE_DIR"
+    if [[ ! -f $VOICE_DIR/$VOICE_NAME.onnx ]]; then
+      "$PIPER_VENV/bin/python" -m piper.download_voices --download-dir "$VOICE_DIR" "$VOICE_NAME" \
+        || log "WARNING: couldn't download the $VOICE_NAME voice."
+    fi
+    if [[ -f $VOICE_DIR/$VOICE_NAME.onnx ]]; then
+      install -d "$PROMPT_DIR"
+      if "$PREFIX/venv/bin/noticom-node" render-prompts --piper "$PIPER_VENV/bin/python" \
+          --model "$VOICE_DIR/$VOICE_NAME.onnx" --dir "$PROMPT_DIR"; then
+        log "Spoken prompts rendered with Piper ($VOICE_NAME)."
+      else
+        log "WARNING: some prompts couldn't be rendered; those use the espeak voice."
+      fi
+    fi
+  fi
+fi
+
 install -d -m 700 "$STATE"
 # Button used before HA sends this node a config (e.g. the adoption press).
 # Override at install time, e.g. NOTICOM_BUTTON_PIN=17 or NOTICOM_BUTTON_NC=1.

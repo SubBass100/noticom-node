@@ -135,7 +135,13 @@ async def run() -> None:
 
 
 def main() -> None:
-    """Console script entry point."""
+    """Console script entry point (`noticom-node`, or `noticom-node render-prompts ...`)."""
+    import sys  # noqa: PLC0415
+
+    if len(sys.argv) > 1 and sys.argv[1] == "render-prompts":
+        from .prompts import main as render_main  # noqa: PLC0415
+
+        sys.exit(render_main(sys.argv[2:]))
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
