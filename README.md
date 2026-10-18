@@ -5,7 +5,8 @@ the notification-chime and push-to-talk intercom for Home Assistant.
 
 **Hardware:** Raspberry Pi 3 or newer, ReSpeaker 2-Mic Pi HAT (or the
 Keyestudio clone), a small speaker on the HAT's speaker output, and a button
-from a GPIO pin to ground (default GPIO13, normally closed).
+from a GPIO pin to ground (default GPIO13, normally open; normally closed
+buttons are supported too).
 
 > **Status: early scaffold.** Adoption into Home Assistant works and the
 > installer sets up the ReSpeaker sound card; the control channel, chime
@@ -21,10 +22,10 @@ curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install
 ```
 
 For a different button, set it at install time, e.g. the HAT's onboard
-normally-open button:
+button:
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo NOTICOM_BUTTON_PIN=17 NOTICOM_BUTTON_NC=0 bash
+curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo NOTICOM_BUTTON_PIN=17 bash
 ```
 
 Reboot when the installer asks (first install adds the sound card overlay).

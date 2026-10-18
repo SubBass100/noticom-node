@@ -22,7 +22,7 @@ FAKE = os.environ.get("NOTICOM_FAKE_HW") == "1"
 # for the adoption press). Set per node in /etc/noticom/node.env.
 # GPIO17 is the HAT's onboard button; 13 is on its Grove connector.
 DEFAULT_BUTTON_PIN = int(os.environ.get("NOTICOM_BUTTON_PIN", "13"))
-DEFAULT_BUTTON_NC = os.environ.get("NOTICOM_BUTTON_NC", "1") == "1"
+DEFAULT_BUTTON_NC = os.environ.get("NOTICOM_BUTTON_NC", "0") == "1"
 # Factory reset: this many presses within RESET_WINDOW_S seconds. A gesture,
 # not a long hold, because a broken wire on an NC button reads as held forever.
 RESET_PRESSES = 5
