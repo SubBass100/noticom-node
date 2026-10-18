@@ -13,6 +13,7 @@ dependencies = [
   "aiohttp>=3.9",
   "cryptography>=42",
   "zeroconf>=0.132",
+  "ifaddr>=0.2",
   "gpiozero>=2.0",
   "numpy>=1.26",
 ]

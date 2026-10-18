@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import socket
 from collections.abc import Awaitable, Callable
 
+import ifaddr
 from aiohttp import web
 from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
@@ -19,6 +21,20 @@ _LOGGER = logging.getLogger(__name__)
 ADOPT_PORT = 8742
 SERVICE_TYPE = "_noticom._tcp.local."
 BUTTON_WINDOW_S = 60
+
+
+def local_ipv4_addresses() -> list[str]:
+    """This node's LAN IPv4 addresses (no loopback or link-local)."""
+    found: list[str] = []
+    for adapter in ifaddr.get_adapters():
+        for ip in adapter.ips:
+            if not ip.is_IPv4:
+                continue
+            addr = ipaddress.IPv4Address(ip.ip)
+            if addr.is_loopback or addr.is_link_local:
+                continue
+            found.append(str(addr))
+    return found
 
 
 class AdoptionServer:
@@ -46,16 +62,28 @@ class AdoptionServer:
         site = web.TCPSite(runner, port=ADOPT_PORT)
         await site.start()
 
+        # Home Assistant ignores mDNS services that carry no address, so the
+        # A records must be included explicitly.
+        addresses = local_ipv4_addresses()
+        while not addresses:
+            _LOGGER.warning("No LAN IPv4 address yet; waiting for network")
+            await asyncio.sleep(5)
+            addresses = local_ipv4_addresses()
+
         azc = AsyncZeroconf(ip_version=IPVersion.V4Only)
         info = AsyncServiceInfo(
             SERVICE_TYPE,
             f"noticom-{self._state.node_id}.{SERVICE_TYPE}",
+            addresses=[socket.inet_aton(a) for a in addresses],
             port=ADOPT_PORT,
             properties={"node_id": self._state.node_id, "version": __version__},
             server=f"{socket.gethostname()}.local.",
         )
         await azc.async_register_service(info)
-        _LOGGER.info("Unclaimed; advertising as %s", self._state.node_id)
+        _LOGGER.info(
+            "Unclaimed; advertising as %s on %s:%d",
+            self._state.node_id, ", ".join(addresses), ADOPT_PORT,
+        )
         try:
             await self._adopted.wait()
         finally:
