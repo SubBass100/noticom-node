@@ -8,9 +8,9 @@ Keyestudio clone), a small speaker on the HAT's speaker output, and a button
 from a GPIO pin to ground (default GPIO13, normally open; normally closed
 buttons are supported too).
 
-> **Status: early scaffold.** Adoption into Home Assistant works and the
-> installer sets up the ReSpeaker sound card; the control channel, chime
-> playback and PTT recording are next.
+> **Status: early.** The installer sets up the ReSpeaker sound card, and
+> nodes adopt into Home Assistant and stay connected, following volume, mic
+> and button settings from HA. Chime playback and PTT recording are next.
 
 ## Install
 
@@ -48,7 +48,9 @@ cancelled."
 | Path | What |
 |---|---|
 | `noticom_node/adoption.py` | mDNS advertisement + `POST /adopt` handshake |
-| `noticom_node/state.py` | Identity key, node id and pairing in `/etc/noticom` |
+| `noticom_node/control.py` | Live connection to HA: mutual auth, config, unpair, reconnect |
+| `noticom_node/state.py` | Identity key, node id, pairing and cached config in `/etc/noticom` |
+| `noticom_node/reset.py` | Two-step factory reset confirmation |
 | `noticom_node/playqueue.py` | Playback queue rules (1 playing + 5 waiting, chime priority) |
 | `noticom_node/hardware.py` | Button (gpiozero) and audio (aplay) |
 | `noticom_node/mixer.py` | WM8960 mixer state: mono output, mic routing, gains |

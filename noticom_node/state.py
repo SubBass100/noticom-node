@@ -41,6 +41,7 @@ class NodeState:
         self._key_path = self.dir / "node.key"
         self._id_path = self.dir / "node_id"
         self._pairing_path = self.dir / "pairing.json"
+        self._config_path = self.dir / "config.json"
 
     @property
     def node_id(self) -> str:
@@ -77,7 +78,21 @@ class NodeState:
         )
         tmp.replace(self._pairing_path)
 
+    @property
+    def config(self) -> dict:
+        """Last config received from HA ({} if none yet)."""
+        try:
+            return json.loads(self._config_path.read_text())
+        except (FileNotFoundError, ValueError):
+            return {}
+
+    def save_config(self, config: dict) -> None:
+        """Cache HA's config so the node starts with it before reconnecting."""
+        tmp = self._config_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(config))
+        tmp.replace(self._config_path)
+
     def factory_reset(self) -> None:
-        """Forget the server and rotate the identity key."""
-        for path in (self._pairing_path, self._key_path):
+        """Forget the server and its config, and rotate the identity key."""
+        for path in (self._pairing_path, self._key_path, self._config_path):
             path.unlink(missing_ok=True)

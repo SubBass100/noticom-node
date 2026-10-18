@@ -29,7 +29,8 @@ T_CONFIG = "config"
 T_CHIMES = "chimes"
 T_PLAY = "play"
 T_STOP = "stop"
-T_PING = "ping"
+T_UNPAIR = "unpair"
+T_ERROR = "error"
 
 # Node -> server message types.
 T_AUTH = "auth"
@@ -37,7 +38,6 @@ T_STATE = "state"
 T_PTT = "ptt"
 T_JOB = "job"
 T_CONFIG_RESULT = "config_result"
-T_PONG = "pong"
 
 # Job statuses reported by nodes.
 JOB_STARTED = "started"
@@ -132,6 +132,15 @@ def verify_request(
     if abs(current - ts) > max_age_s:
         return False
     return verify(pubkey_b64, request_signing_payload(method, path, ts), sig_b64)
+
+
+def unpair_payload(node_nonce_b64: str) -> bytes:
+    """Bytes the server signs to tell a node to forget it.
+
+    Bound to the node's own handshake nonce, so it can't be replayed on a
+    later connection.
+    """
+    return b"unpair\n" + b64d(node_nonce_b64)
 
 
 def encode(msg_type: str, **fields: Any) -> str:
