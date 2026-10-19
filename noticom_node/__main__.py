@@ -31,6 +31,7 @@ from .player import Player
 from .ptt import PttController, Recorder
 from .reset import confirm_reset
 from .state import NodeState
+from .updater import UpdateError, start_update
 
 _LOGGER = logging.getLogger("noticom_node")
 
@@ -55,6 +56,7 @@ class Node:
         self.ptt = PttController(self.button, self.recorder, chirp, cancel_tone, self.player.set_hold)
         self.audio = soundcards.choose()
         self._welcomed = False
+        self.updating: str | None = None  # the version being installed
 
     # ---- audio --------------------------------------------------------
 
@@ -79,6 +81,18 @@ class Node:
             and self.button.pin is not None
         )
         return ok
+
+    async def update(self, ref: str) -> str | None:
+        """Install another version (HA asked). Returns an error message or None."""
+        if self.updating:
+            return None  # already on it
+        try:
+            await start_update(ref)
+        except UpdateError as err:
+            _LOGGER.error("Couldn't start the update: %s", err)
+            return str(err)
+        self.updating = ref
+        return None
 
     def capabilities(self) -> dict:
         """What this node can do, for Home Assistant."""
@@ -137,11 +151,13 @@ class Node:
                 "queue_depth": self.player.queue.depth,
                 "playing": self.player.queue.current is not None,
                 "caps": self.capabilities(),
+                "updating": self.updating,
             }
 
         client = ControlClient(
             self.state, pairing, apply_config, node_state,
             player=self.player, cache=self.cache, get_caps=self.capabilities,
+            on_update=self.update,
         )
         self.ptt.upload = client.upload_clip
         self.ptt.on_phase = client.send_ptt

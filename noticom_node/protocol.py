@@ -30,6 +30,7 @@ T_CHIMES = "chimes"
 T_PLAY = "play"
 T_STOP = "stop"
 T_UNPAIR = "unpair"
+T_UPDATE = "update"  # install a node software version: {"ref": "main"}
 T_ERROR = "error"
 
 # Node -> server message types.

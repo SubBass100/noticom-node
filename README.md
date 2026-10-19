@@ -152,8 +152,13 @@ until pressed). Most buttons are normally open.
 
 ## Updating
 
-Run the install line again. Your node stays connected to Home Assistant
-and keeps its settings.
+Easiest: in Home Assistant, install the node's **Node software** update
+(under **Settings → Updates**, or **Noticom → Settings → Update all**). The
+node updates itself and restarts.
+
+Or, over SSH, run the install line again. Your node stays connected to Home
+Assistant and keeps its settings. Nodes on version 0.2.0 or older need this
+once before they can update from Home Assistant.
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/SubBass100/noticom-node/main/install.sh | sudo bash
@@ -199,6 +204,7 @@ NOTICOM_FAKE_HW=1 NOTICOM_STATE_DIR=./dev-state NOTICOM_CACHE_DIR=./dev-cache no
 | `noticom_node/soundcards.py` | Finds the sound hardware (ReSpeaker, USB, headphone jack, HDMI) |
 | `noticom_node/audio.py`, `mixer.py` | Sound processing and volume/mic settings for any card |
 | `noticom_node/localctl.py` | `sudo noticom-node pair` / `reset` |
+| `noticom_node/updater.py` | Installs a new version when Home Assistant asks |
 | `noticom_node/reset.py`, `prompts.py` | Factory reset and the spoken prompts |
 | `noticom_node/state.py` | The node's identity and pairing (in `/etc/noticom`) |
 | `install.sh` | The one-line installer |

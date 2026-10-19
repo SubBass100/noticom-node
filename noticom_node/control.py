@@ -93,6 +93,7 @@ class ControlClient:
         player: Player | None = None,
         cache: ChimeCache | None = None,
         get_caps: Callable[[], dict[str, Any]] | None = None,
+        on_update: Callable[[str], Awaitable[str | None]] | None = None,
     ) -> None:
         self._state = state
         self._pairing = pairing
@@ -101,6 +102,7 @@ class ControlClient:
         self._player = player
         self._cache = cache
         self._get_caps = get_caps or (lambda: {})
+        self._on_update = on_update
         self._session: aiohttp.ClientSession | None = None
         self._sync_task: asyncio.Task | None = None
         self._ws: aiohttp.ClientWebSocketResponse | None = None
@@ -299,6 +301,11 @@ class ControlClient:
                 await self._player.add(job)
             elif msg_type == protocol.T_STOP and self._player is not None:
                 await self._player.stop()
+            elif msg_type == protocol.T_UPDATE and self._on_update is not None:
+                error = await self._on_update(str(data.get("ref", "")))
+                await ws.send_str(protocol.encode(
+                    protocol.T_STATE, **self._get_state(), update_error=error,
+                ))
             else:
                 _LOGGER.debug("Ignoring %s (not implemented yet)", msg_type)
         return None
