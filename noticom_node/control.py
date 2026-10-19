@@ -92,6 +92,7 @@ class ControlClient:
         get_state: Callable[[], dict[str, Any]] | None = None,
         player: Player | None = None,
         cache: ChimeCache | None = None,
+        get_caps: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._state = state
         self._pairing = pairing
@@ -99,6 +100,7 @@ class ControlClient:
         self._get_state = get_state or (lambda: {})
         self._player = player
         self._cache = cache
+        self._get_caps = get_caps or (lambda: {})
         self._session: aiohttp.ClientSession | None = None
         self._sync_task: asyncio.Task | None = None
         self._ws: aiohttp.ClientWebSocketResponse | None = None
@@ -228,6 +230,7 @@ class ControlClient:
                 node_id=self._state.node_id,
                 nonce=node_nonce,
                 version=__version__,
+                caps=self._get_caps(),
                 sig=protocol.sign(self._state.key, server_nonce),
             )
         )

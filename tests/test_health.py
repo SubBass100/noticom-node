@@ -33,15 +33,3 @@ async def test_missing_iw_is_harmless(monkeypatch):
 
     monkeypatch.setattr(health, "_iw", no_iw)
     assert await health.disable_wifi_powersave(["wlan0"]) == []
-
-
-def test_sound_card_present(tmp_path):
-    cards = tmp_path / "cards"
-    cards.write_text(
-        " 0 [Headphones     ]: bcm2835_headpho - bcm2835 Headphones\n"
-        " 1 [seeed2micvoicec]: simple-card - seeed2micvoicec\n"
-    )
-    assert health.sound_card_present(cards)
-    cards.write_text(" 0 [Headphones     ]: bcm2835_headpho - bcm2835 Headphones\n")
-    assert not health.sound_card_present(cards)
-    assert not health.sound_card_present(tmp_path / "missing")

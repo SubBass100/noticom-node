@@ -5,8 +5,9 @@
   settings to disable it don't reliably survive a reboot (for example when
   Raspberry Pi Imager sets Wi-Fi up via cloud-init/netplan), so the node
   turns it off itself at startup and re-checks every minute.
-- A missing sound card (usually: not rebooted after installing) is logged
-  loudly instead of failing silently on every chime.
+- The sound hardware in use is logged at startup, and a node with no
+  speaker at all (usually: not rebooted after installing) is logged loudly
+  instead of failing silently on every chime.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from .hardware import CARD, FAKE
+from .hardware import FAKE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,22 +77,21 @@ async def keep_wifi_awake() -> None:
         await asyncio.sleep(POWERSAVE_CHECK_S)
 
 
-def sound_card_present(cards: Path = Path("/proc/asound/cards")) -> bool:
-    """Whether the ReSpeaker's ALSA card exists."""
-    try:
-        return f"[{CARD}" in cards.read_text().replace(" ", "")
-    except OSError:
-        return False
-
-
-def check_sound_card() -> bool:
-    """Log a clear error if the sound card is missing. Returns True if present."""
-    if FAKE or sound_card_present():
+def check_audio(setup) -> bool:
+    """Log what the node will play on and record from. False if no speaker."""
+    if FAKE:
         return True
-    _LOGGER.error(
-        "Sound card '%s' not found, so nothing will play. If you just installed, "
-        "reboot the Pi (sudo reboot). Otherwise check the HAT is seated and "
-        "re-run the installer.",
-        CARD,
+    if setup.output is None:
+        _LOGGER.error(
+            "No speaker or sound card found, so nothing will play. If you just "
+            "installed with a ReSpeaker HAT, reboot the Pi (sudo reboot). Otherwise "
+            "plug in a USB sound card or a speaker on the headphone jack."
+        )
+        return False
+    mic = (
+        f"microphone: {setup.input.label}"
+        if setup.input is not None
+        else "no microphone, so this node plays chimes only"
     )
-    return False
+    _LOGGER.info("Sound: playing on %s; %s", setup.output.label, mic)
+    return True

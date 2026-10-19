@@ -1,17 +1,25 @@
-"""WM8960 mixer setup for the ReSpeaker 2-Mic HAT (v1, codec at I2C 0x1a).
+"""Sound card mixer settings: volume and microphone levels.
 
-Values found by testing on a Pi 3 with Raspberry Pi OS (Debian 13, kernel
-6.18) using the stock `wm8960-soundcard` overlay. The node applies these at
-startup and whenever HA changes volume or mic settings, so the node software
-owns the mixer state.
+The ReSpeaker 2-Mic HAT (v1, WM8960 codec at I2C 0x1a) gets a tuned set of
+controls, found by testing on a Pi 3 with Raspberry Pi OS (Debian 13,
+kernel 6.18) and the stock `wm8960-soundcard` overlay. Any other card (USB,
+headphone jack, HDMI) gets a generic treatment: the node looks for the
+card's playback and capture volume controls and sets those. A card with no
+playback volume control gets software volume instead.
+
+The node applies these at startup and whenever HA changes volume or mic
+settings, so the node software owns the mixer state.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from dataclasses import dataclass
 
 from .hardware import CARD, FAKE
+from .soundcards import KIND_RESPEAKER, AudioSetup
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,24 +69,136 @@ def build_settings(
     return settings
 
 
-async def apply(
+async def _amixer(*args: str) -> tuple[int, str]:
+    proc = await asyncio.create_subprocess_exec(
+        "amixer", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    return proc.returncode or 0, out.decode(errors="replace")
+
+
+async def apply_respeaker(
     volume: int = DEFAULT_VOLUME,
     mic_gain: int = DEFAULT_MIC_GAIN,
     mic_boost: int = DEFAULT_MIC_BOOST,
 ) -> bool:
-    """Apply the mixer state with amixer. Returns False if any control failed."""
+    """Apply the tuned WM8960 state. Returns False if any control failed."""
     ok = True
     for control, values in build_settings(volume, mic_gain, mic_boost):
         if FAKE:
             _LOGGER.debug("[fake] amixer sset %r %s", control, " ".join(values))
             continue
-        proc = await asyncio.create_subprocess_exec(
-            "amixer", "-q", "-c", CARD, "sset", control, *values,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, err = await proc.communicate()
-        if proc.returncode != 0:
+        code, out = await _amixer("-q", "-c", CARD, "sset", control, *values)
+        if code != 0:
             ok = False
-            _LOGGER.warning("amixer %r failed: %s", control, err.decode().strip())
+            _LOGGER.warning("amixer %r failed: %s", control, out.strip())
     return ok
+
+
+# ---- generic cards -------------------------------------------------------
+
+PLAYBACK_PREFERENCE = ["Speaker", "PCM", "Headphone", "Master", "Playback", "Front"]
+CAPTURE_PREFERENCE = ["Mic", "Capture", "Mic Capture", "Microphone"]
+
+
+@dataclass(frozen=True)
+class Control:
+    """One simple mixer control and what it can do."""
+
+    name: str
+    caps: frozenset[str]
+
+
+_CONTROL = re.compile(r"^Simple mixer control '(.+)',(\d+)$")
+
+
+def parse_scontents(text: str) -> list[Control]:
+    """Parse `amixer scontents` output into controls with their capabilities."""
+    controls: list[Control] = []
+    name: str | None = None
+    for line in text.splitlines():
+        if match := _CONTROL.match(line.strip()):
+            name = match.group(1) if match.group(2) == "0" else None
+        elif name is not None and line.strip().startswith("Capabilities:"):
+            controls.append(Control(name, frozenset(line.split(":", 1)[1].split())))
+            name = None
+    return controls
+
+
+def pick_control(controls: list[Control], cap: str, preference: list[str], avoid: tuple[str, ...]) -> Control | None:
+    """The best control with capability `cap` (e.g. pvolume, cvolume)."""
+    usable = [c for c in controls if cap in c.caps]
+    for wanted in preference:
+        for control in usable:
+            if control.name.lower() == wanted.lower():
+                return control
+    for control in usable:
+        if not any(word in control.name.lower() for word in avoid):
+            return control
+    return None
+
+
+async def _controls(card_id: str) -> list[Control]:
+    code, out = await _amixer("-c", card_id, "scontents")
+    return parse_scontents(out) if code == 0 else []
+
+
+async def apply_generic(setup: AudioSetup, volume: int, mic_gain: int) -> tuple[bool, float]:
+    """Set volume (and mic gain) on a non-ReSpeaker card.
+
+    Returns (ok, software_gain): software_gain is 1.0 when the card's own
+    volume control is used, or volume/100 when it has none.
+    """
+    ok, software_gain = True, 1.0
+    volume, mic_gain = clamp(volume, 0, 100), clamp(mic_gain, 0, 100)
+    if setup.output is not None and setup.output.kind != KIND_RESPEAKER:
+        controls = await _controls(setup.output.id)
+        control = pick_control(controls, "pvolume", PLAYBACK_PREFERENCE, ("mic", "capture"))
+        if control is None:
+            software_gain = volume / 100
+            _LOGGER.info(
+                "%s has no volume control; using software volume (%d%%)",
+                setup.output.label, volume,
+            )
+        else:
+            args = [f"{volume}%"] + (["unmute"] if "pswitch" in control.caps else [])
+            # -M maps percentages to how loud they sound, not raw steps.
+            code, out = await _amixer("-q", "-M", "-c", setup.output.id, "sset", control.name, *args)
+            if code != 0:
+                ok, software_gain = False, volume / 100
+                _LOGGER.warning("Couldn't set %s volume: %s", setup.output.label, out.strip())
+    if setup.input is not None and setup.input.kind != KIND_RESPEAKER:
+        controls = await _controls(setup.input.id)
+        control = pick_control(controls, "cvolume", CAPTURE_PREFERENCE, ("playback",))
+        if control is not None:
+            args = [f"{mic_gain}%"] + (["cap"] if "cswitch" in control.caps else [])
+            code, out = await _amixer("-q", "-M", "-c", setup.input.id, "sset", control.name, *args)
+            if code != 0:
+                ok = False
+                _LOGGER.warning("Couldn't set %s mic gain: %s", setup.input.label, out.strip())
+    return ok, software_gain
+
+
+async def apply(
+    setup: AudioSetup,
+    volume: int = DEFAULT_VOLUME,
+    mic_gain: int = DEFAULT_MIC_GAIN,
+    mic_boost: int = DEFAULT_MIC_BOOST,
+) -> tuple[bool, float]:
+    """Apply levels to whichever cards are in use. Returns (ok, software_gain)."""
+    if FAKE:
+        return True, 1.0
+    ok, software_gain = True, 1.0
+    uses_respeaker = any(
+        card is not None and card.kind == KIND_RESPEAKER for card in (setup.output, setup.input)
+    )
+    if uses_respeaker:
+        ok = await apply_respeaker(volume, mic_gain, mic_boost)
+    if setup.output is not None and setup.output.kind != KIND_RESPEAKER or (
+        setup.input is not None and setup.input.kind != KIND_RESPEAKER
+    ):
+        generic_ok, software_gain = await apply_generic(setup, volume, mic_gain)
+        ok = ok and generic_ok
+    return ok, software_gain

@@ -15,14 +15,15 @@ _LOGGER = logging.getLogger(__name__)
 HOLD_TO_TALK_S = 0.25  # a press must last this long to start recording (taps stay silent)
 MIN_MESSAGE_S = 0.5  # shorter recordings are discarded
 MAX_MESSAGE_S = 45.0
-CAPTURE_DEVICE = f"plughw:CARD={CARD},DEV=0"
+CAPTURE_DEVICE = f"plughw:CARD={CARD},DEV=0"  # default; set from the chosen input card
 BYTES_PER_SECOND = SAMPLE_RATE * 2 * 2  # stereo 16-bit
 
 
 class Recorder:
     """Records raw 16 kHz stereo 16-bit PCM from the HAT's two mics."""
 
-    def __init__(self) -> None:
+    def __init__(self, device: str = CAPTURE_DEVICE) -> None:
+        self.device = device
         self._proc: asyncio.subprocess.Process | None = None
         self._chunks: list[bytes] = []
         self._reader: asyncio.Task | None = None
@@ -34,7 +35,7 @@ class Recorder:
         if FAKE:
             return
         self._proc = await asyncio.create_subprocess_exec(
-            "arecord", "-q", "-D", CAPTURE_DEVICE, "-f", "S16_LE",
+            "arecord", "-q", "-D", self.device, "-f", "S16_LE",
             "-r", str(SAMPLE_RATE), "-c", "2", "-t", "raw",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,

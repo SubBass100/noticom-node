@@ -11,6 +11,8 @@ ExecStart=/opt/noticom-node/venv/bin/noticom-node
 Environment=NOTICOM_STATE_DIR=/etc/noticom
 Environment=NOTICOM_CACHE_DIR=/var/cache/noticom/chimes
 CacheDirectory=noticom
+# /run/noticom: the root-only socket for `noticom-node pair` and `reset`.
+RuntimeDirectory=noticom
 # Fail loudly instead of falling back to a GPIO backend that can't work.
 Environment=GPIOZERO_PIN_FACTORY=lgpio
 # Per-node button defaults (pin, normally closed); written by install.sh.

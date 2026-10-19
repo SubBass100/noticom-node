@@ -56,7 +56,8 @@ elif probe 18; then
   log "WARNING: found a ReSpeaker 2-Mic HAT v2 (TLV320AIC3104 codec)."
   log "         v2 boards aren't supported by the installer yet."
 else
-  log "WARNING: no ReSpeaker codec found on I2C bus 1. Is the HAT seated?"
+  log "No ReSpeaker HAT found: Noticom will use a USB sound card if one is"
+  log "plugged in, or else the headphone jack (use powered speakers there)."
 fi
 # Mixer levels (mono output, mic routing, gains) are applied by the
 # noticom-node service itself at startup, so nothing to store here.
@@ -137,7 +138,14 @@ NOTICOM_BUTTON_PIN=${NOTICOM_BUTTON_PIN:-13}
 NOTICOM_BUTTON_NC=${NOTICOM_BUTTON_NC:-0}
 ENV
 fi
-log "Button: GPIO$(sed -n 's/^NOTICOM_BUTTON_PIN=//p' "$STATE/node.env"), normally $( [[ $(sed -n 's/^NOTICOM_BUTTON_NC=//p' "$STATE/node.env") == 1 ]] && echo closed || echo open)"
+BUTTON_PIN=$(sed -n 's/^NOTICOM_BUTTON_PIN=//p' "$STATE/node.env")
+case "${BUTTON_PIN,,}" in
+  none|0|off|"") log "Button: none (pair and reset with: sudo noticom-node pair / reset)" ;;
+  *) log "Button: GPIO$BUTTON_PIN, normally $( [[ $(sed -n 's/^NOTICOM_BUTTON_NC=//p' "$STATE/node.env") == 1 ]] && echo closed || echo open)" ;;
+esac
+
+# So `sudo noticom-node pair` / `reset` work from any shell.
+ln -sf "$PREFIX/venv/bin/noticom-node" /usr/local/bin/noticom-node
 
 log "Installing systemd service"
 curl -sSL "https://raw.githubusercontent.com/SubBass100/noticom-node/$REF/systemd/noticom-node.service" \
@@ -156,4 +164,5 @@ else
   log "Done. The node should now appear in Home Assistant under"
 fi
 log "Settings -> Devices & services as a discovered Noticom node."
+log "To add it: click Add, then press the node's button, or run:  sudo noticom-node pair"
 log "Logs: journalctl -u noticom-node -f"
