@@ -100,6 +100,9 @@ async def apply_respeaker(
 # ---- generic cards -------------------------------------------------------
 
 PLAYBACK_PREFERENCE = ["Speaker", "PCM", "Headphone", "Master", "Playback", "Front"]
+# Other controls in the output path (a PC's built-in audio has several):
+# turned fully up and unmuted so only the chosen control sets the volume.
+PATH_CONTROLS = ["Master", "Headphone", "Speaker", "Front", "Line Out"]
 CAPTURE_PREFERENCE = ["Mic", "Capture", "Mic Capture", "Microphone"]
 
 
@@ -140,6 +143,15 @@ def pick_control(controls: list[Control], cap: str, preference: list[str], avoid
     return None
 
 
+def path_controls(controls: list[Control], chosen: Control) -> list[Control]:
+    """Output-path controls other than the volume control."""
+    wanted = {name.lower() for name in PATH_CONTROLS}
+    return [
+        c for c in controls
+        if c.name != chosen.name and c.name.lower() in wanted and "pvolume" in c.caps
+    ]
+
+
 async def _controls(card_id: str) -> list[Control]:
     code, out = await _amixer("-c", card_id, "scontents")
     return parse_scontents(out) if code == 0 else []
@@ -169,6 +181,9 @@ async def apply_generic(setup: AudioSetup, volume: int, mic_gain: int) -> tuple[
             if code != 0:
                 ok, software_gain = False, volume / 100
                 _LOGGER.warning("Couldn't set %s volume: %s", setup.output.label, out.strip())
+            for other in path_controls(controls, control):
+                path_args = ["100%"] + (["unmute"] if "pswitch" in other.caps else [])
+                await _amixer("-q", "-M", "-c", setup.output.id, "sset", other.name, *path_args)
     if setup.input is not None and setup.input.kind != KIND_RESPEAKER:
         controls = await _controls(setup.input.id)
         control = pick_control(controls, "cvolume", CAPTURE_PREFERENCE, ("playback",))

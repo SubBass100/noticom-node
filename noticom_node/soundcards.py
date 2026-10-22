@@ -1,9 +1,10 @@
 """Find the node's sound hardware: ReSpeaker HAT, USB sound card, the Pi's
-headphone jack or HDMI.
+headphone jack, a PC's built-in audio, or HDMI.
 
 Cards are read from /proc/asound. In "auto" mode the best output is, in
-order: ReSpeaker, USB, headphone jack, HDMI; the best input is the ReSpeaker,
-then a USB card with a microphone. A node with no input is chime-only.
+order: ReSpeaker, USB, headphone jack, other (e.g. a PC's built-in audio),
+HDMI; the best input is the ReSpeaker, then a USB card with a microphone,
+then other. A node with no input is chime-only.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ KIND_JACK = "jack"
 KIND_HDMI = "hdmi"
 KIND_OTHER = "other"
 
-OUTPUT_PREFERENCE = [KIND_RESPEAKER, KIND_USB, KIND_JACK, KIND_HDMI, KIND_OTHER]
+# HDMI last: on a PC it's usually a monitor without speakers.
+OUTPUT_PREFERENCE = [KIND_RESPEAKER, KIND_USB, KIND_JACK, KIND_OTHER, KIND_HDMI]
 INPUT_PREFERENCE = [KIND_RESPEAKER, KIND_USB, KIND_OTHER]
 
 AUTO = "auto"
@@ -69,14 +71,15 @@ class SoundCard:
         return {**asdict(self), "label": self.label}
 
 
-def _kind(card_id: str, driver: str) -> str:
+def _kind(card_id: str, driver: str, name: str = "") -> str:
     if card_id == RESPEAKER_ID:
         return KIND_RESPEAKER
     if driver == "USB-Audio":
         return KIND_USB
     if card_id == "Headphones" or "headpho" in driver:
         return KIND_JACK
-    if card_id.startswith("vc4hdmi") or "hdmi" in driver.lower():
+    # Pi: vc4hdmi*; PC: Intel/AMD/NVIDIA HDMI cards ("HDMI", "NVidia", "HDA ATI HDMI").
+    if any("hdmi" in text.lower() for text in (card_id, driver, name)):
         return KIND_HDMI
     return KIND_OTHER
 
@@ -101,7 +104,7 @@ def list_cards(asound: Path = ASOUND) -> list[SoundCard]:
                 id=card_id,
                 driver=driver,
                 name=name.strip(),
-                kind=_kind(card_id, driver),
+                kind=_kind(card_id, driver, name),
                 playback=any(p.endswith("p") for p in pcms),
                 capture=any(p.endswith("c") for p in pcms),
             )

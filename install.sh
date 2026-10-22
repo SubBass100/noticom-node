@@ -13,14 +13,27 @@ die() { printf '\033[1;31m[noticom]\033[0m %s\n' "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Run as root (pipe to 'sudo bash')."
 [[ -r /etc/os-release ]] && . /etc/os-release
-log "OS: ${PRETTY_NAME:-unknown}, kernel $(uname -r)"
+log "OS: ${PRETTY_NAME:-unknown}, kernel $(uname -r), $(uname -m)"
+
+# Raspberry Pi? Anything else (a PC running Ubuntu or Debian, say) has no
+# HAT and no GPIO button: it plays on USB or built-in audio.
+IS_PI=0
+if grep -qa "Raspberry Pi" /proc/device-tree/model 2>/dev/null; then
+  IS_PI=1
+  log "Hardware: $(tr -d '\0' </proc/device-tree/model)"
+else
+  log "Hardware: not a Raspberry Pi (no HAT or GPIO button; USB or built-in audio)"
+fi
 
 log "Installing system packages"
 apt-get update -qq
 # GPIO (lgpio) and NumPy come from apt: lgpio isn't usable from a plain pip
 # install, and apt's NumPy avoids slow source builds on 32-bit Pi OS.
-apt-get install -y -qq python3 python3-venv python3-dev python3-lgpio \
-  python3-numpy alsa-utils git iw espeak-ng
+apt-get install -y -qq python3 python3-venv python3-dev \
+  python3-numpy alsa-utils git iw espeak-ng curl
+if [[ $IS_PI -eq 1 ]]; then
+  apt-get install -y -qq python3-lgpio
+fi
 
 # --- ReSpeaker 2-Mic HAT -----------------------------------------------
 # The v1 board (and the Keyestudio clone) has a WM8960 codec at I2C 0x1a.
@@ -31,16 +44,21 @@ CONFIG_TXT=/boot/firmware/config.txt
 OVERLAY_LINE="dtoverlay=wm8960-soundcard,alsaname=seeed2micvoicec"
 REBOOT_NEEDED=0
 
-apt-get install -y -qq i2c-tools
-if command -v raspi-config >/dev/null; then
-  raspi-config nonint do_i2c 0
-fi
-
 probe() {  # probe <hex addr>: true if a device (or a bound driver) answers
   i2cdetect -y 1 "0x$1" "0x$1" 2>/dev/null | grep -qE "^[0-9a-f]0:.*($1|UU)"
 }
 
-if probe 1a; then
+if [[ $IS_PI -eq 1 ]]; then
+  apt-get install -y -qq i2c-tools
+  if command -v raspi-config >/dev/null; then
+    raspi-config nonint do_i2c 0
+  fi
+fi
+
+if [[ $IS_PI -eq 0 ]]; then
+  log "Sound: Noticom will use a USB sound card if one is plugged in, or else"
+  log "       the computer's built-in audio."
+elif probe 1a; then
   log "Found ReSpeaker 2-Mic HAT v1 (WM8960 codec)"
   [[ -f $CONFIG_TXT ]] || die "$CONFIG_TXT not found"
   # Drop Seeed's broken overlay if someone installed it by hand.
@@ -134,7 +152,7 @@ install -d -m 700 "$STATE"
 # Override at install time, e.g. NOTICOM_BUTTON_PIN=17 or NOTICOM_BUTTON_NC=1.
 if [[ ! -f $STATE/node.env || -n ${NOTICOM_BUTTON_PIN:-}${NOTICOM_BUTTON_NC:-} ]]; then
   cat > "$STATE/node.env" <<ENV
-NOTICOM_BUTTON_PIN=${NOTICOM_BUTTON_PIN:-13}
+NOTICOM_BUTTON_PIN=${NOTICOM_BUTTON_PIN:-$( [[ $IS_PI -eq 1 ]] && echo 13 || echo none )}
 NOTICOM_BUTTON_NC=${NOTICOM_BUTTON_NC:-0}
 ENV
 fi

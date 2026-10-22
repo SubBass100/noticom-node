@@ -27,6 +27,13 @@ follow these steps for each node.
 - **A push button** (optional). You need one to talk on the intercom. Without
   one, you add and reset the node with a command instead (see below).
 
+> **Not a Raspberry Pi?** A node can also be any PC or mini-PC running
+> **Ubuntu or Debian** (x86 or ARM), for chimes. It plays on a USB sound
+> card or the computer's built-in audio. There are no GPIO pins, so there's
+> no button: install it the same way (the installer notices it's not a Pi
+> and skips the button), then add it with `sudo noticom-node pair`. Intercom
+> messages from other nodes still play on it.
+
 ## Wiring
 
 - **ReSpeaker:** push the HAT onto the Pi's pin header and plug the speaker
@@ -177,6 +184,7 @@ journalctl -u noticom-node -f
 | No sound at all | The log's `Sound: playing on …` line shows which output the node chose. Check the speaker is connected there, or pick another under the node's **Sound output** in Home Assistant. With a ReSpeaker, `aplay -l` should list `seeed2micvoicec`; if not, re-run the installer and reboot |
 | No sound from the headphone jack | Use powered speakers, and check the node's **Volume** in Home Assistant |
 | The installer says no ReSpeaker was found | Make sure the HAT is pushed firmly onto all the pins, then run the installer again |
+| A PC node never shows up in Home Assistant | If its firewall is on (`sudo ufw status`), allow Noticom: `sudo ufw allow 8742/tcp` and `sudo ufw allow 5353/udp` |
 | Home Assistant says "Couldn't reach the node" | Update the node (run the install line again): it now keeps Wi-Fi power saving off and introduces itself to Home Assistant so Home Assistant can find it. As a quick workaround, run `ping -c 3 <your Home Assistant IP>` on the Pi, then try again |
 | The button does nothing | Check the log line `Button GPIO13 …`: it should say *released* when you're not touching it. If it says *PRESSED*, change the button type to normally closed in Home Assistant |
 | Messages sound too quiet or distorted | Adjust the node's **Mic gain** and **Mic boost** in Home Assistant |

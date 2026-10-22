@@ -139,9 +139,11 @@ class Node:
                 if not self._welcomed:
                     self._welcomed = True
                     await self.local.connected(config["name"])
-            pin = parse_pin(config.get("button_pin", self.button.pin))
+            pin = parse_pin(config.get("button_pin", self.button.requested_pin))
             nc = bool(config.get("button_nc", self.button.normally_closed))
-            restart = (pin, nc) != (self.button.pin, self.button.normally_closed)
+            # Compare with what was asked for, so a machine without GPIO
+            # (button fell back to none) doesn't restart on every connect.
+            restart = (pin, nc) != (self.button.requested_pin, self.button.normally_closed)
             if restart:
                 _LOGGER.info("Button changed (GPIO%s, NC=%s); restarting", pin, nc)
             return ApplyResult(ok=ok, reason=None if ok else "mixer", restart=restart)

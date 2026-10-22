@@ -82,3 +82,17 @@ async def test_slow_presses_do_not_reset(monkeypatch):
         clock[0] += 1.5  # 5 presses span 6 s > 4 s window
     assert not button.reset_requested.is_set()
     button.close()
+
+
+async def test_no_gpio_means_no_button(monkeypatch):
+    """A PC has no GPIO: the node carries on without a button."""
+    import gpiozero
+
+    def broken(*args, **kwargs):
+        raise gpiozero.BadPinFactory("Unable to load any default pin factory!")
+
+    monkeypatch.setattr(gpiozero, "Button", broken)
+    button = hardware.PushButton(13)
+    assert button.pin is None
+    assert button.requested_pin == 13
+    assert not button.is_pressed

@@ -117,3 +117,39 @@ async def test_generic_uses_card_controls_or_software_volume(tmp_path, monkeypat
     ok, gain = await mixer.apply(jack, volume=40)
     assert ok and gain == 0.4  # software volume
     assert not any("sset" in c for c in calls)
+
+
+PC_CARDS = """\
+ 0 [HDMI           ]: HDA-Intel - HDA Intel HDMI
+                      HDA Intel HDMI at 0xf7e34000 irq 33
+ 1 [PCH            ]: HDA-Intel - HDA Intel PCH
+                      HDA Intel PCH at 0xf7e30000 irq 32
+"""
+
+SCONTENTS_PC = """\
+Simple mixer control 'Master',0
+  Capabilities: pvolume pvolume-joined pswitch pswitch-joined
+Simple mixer control 'Headphone',0
+  Capabilities: pvolume pswitch
+Simple mixer control 'PCM',0
+  Capabilities: pvolume
+Simple mixer control 'Capture',0
+  Capabilities: cvolume cswitch
+"""
+
+
+def test_pc_prefers_built_in_audio_over_hdmi(tmp_path):
+    cards = soundcards.list_cards(
+        fake_asound(tmp_path, PC_CARDS, {0: ["pcm3p", "pcm7p"], 1: ["pcm0p", "pcm0c"]})
+    )
+    assert [(c.id, c.kind) for c in cards] == [("HDMI", "hdmi"), ("PCH", "other")]
+    setup = soundcards.choose(cards=cards)
+    assert setup.output.id == "PCH"
+    assert setup.output.label == "HDA Intel PCH"
+
+
+def test_pc_path_controls_turned_up():
+    controls = mixer.parse_scontents(SCONTENTS_PC)
+    chosen = mixer.pick_control(controls, "pvolume", mixer.PLAYBACK_PREFERENCE, ("mic", "capture"))
+    assert chosen.name == "PCM"
+    assert [c.name for c in mixer.path_controls(controls, chosen)] == ["Master", "Headphone"]

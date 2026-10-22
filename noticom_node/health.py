@@ -83,9 +83,10 @@ def check_audio(setup) -> bool:
         return True
     if setup.output is None:
         _LOGGER.error(
-            "No speaker or sound card found, so nothing will play. If you just "
-            "installed with a ReSpeaker HAT, reboot the Pi (sudo reboot). Otherwise "
-            "plug in a USB sound card or a speaker on the headphone jack."
+            "No speaker or sound card found, so nothing will play (`aplay -l` lists "
+            "them). If you just installed with a ReSpeaker HAT, reboot the Pi "
+            "(sudo reboot). Otherwise plug in a USB sound card, or a speaker on "
+            "the headphone jack."
         )
         return False
     mic = (

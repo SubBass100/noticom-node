@@ -108,6 +108,7 @@ class PushButton:
         self, pin: int | None = DEFAULT_BUTTON_PIN, normally_closed: bool = DEFAULT_BUTTON_NC
     ) -> None:
         self.pin = pin
+        self.requested_pin = pin  # stays set if GPIO turns out to be unusable
         self.normally_closed = normally_closed
         self._loop = asyncio.get_running_loop()
         self.pressed = asyncio.Event()
@@ -117,9 +118,17 @@ class PushButton:
         self._button = None
         if FAKE or pin is None:  # no button: pair and reset with `noticom-node` commands
             return
-        from gpiozero import Button  # imported lazily: needs GPIO
+        try:
+            from gpiozero import Button  # imported lazily: needs GPIO
 
-        self._button = Button(pin, pull_up=True, bounce_time=0.03)
+            self._button = Button(pin, pull_up=True, bounce_time=0.03)
+        except Exception as err:  # noqa: BLE001 - e.g. a PC with no GPIO pins
+            _LOGGER.warning(
+                "Can't use GPIO%s for the button (%s). Carrying on without a button: "
+                "pair and reset with `sudo noticom-node pair` / `reset`.", pin, err,
+            )
+            self.pin = None
+            return
         on_low = lambda: self._loop.call_soon_threadsafe(  # noqa: E731
             self._on_release if normally_closed else self._on_press
         )
